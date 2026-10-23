@@ -1,3 +1,4 @@
+import { render } from "../../src/server/render";
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { templates } from "../fixtures/examples";
@@ -442,3 +443,58 @@ for (const fullDocument of [false, true]) {
     await expect(page.locator("h1")).toHaveCSS("color", "rgb(20, 60, 90)");
   });
 }
+
+test("verified CDN scripts execute offline but cannot load runtime dependencies", async ({
+  page,
+}) => {
+  const originalFetch = globalThis.fetch;
+  const declared =
+    "https://cdn.jsdelivr.net/npm/atelier-cdn-test@1.2.3/dist/index.js";
+  const source = `window.cdnLoaded = true;
+    const script = document.createElement('script'); script.src = 'https://cdn.jsdelivr.net/npm/extra@1.2.3/index.js'; document.head.append(script);
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/extra/1.2.3/style.css'; document.head.append(css);
+    const image = new Image(); image.src = 'https://cdn.jsdelivr.net/npm/extra@1.2.3/map.png';
+    new FontFace('Extra', 'url(https://unpkg.com/extra@1.2.3/font.woff2)').load().catch(()=>{});
+    fetch('https://unpkg.com/extra@1.2.3/data.json').catch(()=>{});
+    try { new Worker('https://cdn.jsdelivr.net/npm/extra@1.2.3/worker.js'); } catch {}
+    try { new Worker(URL.createObjectURL(new Blob(['postMessage("worker")']))); } catch {}
+    `;
+  let html: string;
+  try {
+    globalThis.fetch = (async (input) => {
+      if (String(input).startsWith("https://registry.npmjs.org/"))
+        return Response.json({
+          versions: { "1.2.3": {} },
+          time: { "1.2.3": "2020-01-01" },
+        });
+      expect(String(input)).toBe(declared);
+      return new Response(source, {
+        headers: { "content-type": "application/javascript" },
+      });
+    }) as typeof fetch;
+    html = await render(
+      {
+        kind: "html",
+        entry: "index.html",
+        files: {
+          "index.html": `<script src="${declared}"></script><button onclick="this.textContent=window.cdnLoaded?'Loaded':'Missing'">Check CDN</button>`,
+        },
+      },
+      { id: "cdn-test", revision: 1, standalone: true },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const network: string[] = [];
+  await page.route("https://**/*", async (route) => {
+    network.push(route.request().url());
+    await route.abort();
+  });
+  await page.setContent(html);
+  await page.getByRole("button", { name: "Check CDN" }).click();
+  await expect(
+    page.getByRole("button", { name: "Loaded", exact: true }),
+  ).toBeVisible();
+  expect(network).toEqual([]);
+  expect(page.workers()).toHaveLength(0);
+});

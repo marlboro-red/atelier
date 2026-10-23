@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import sanitize from "sanitize-html";
 import katex from "katex";
 import type { Content } from "../shared/schema.js";
+import { loadCdnScript } from "./cdn.js";
 const require = createRequire(import.meta.url);
 const allowed = new Set([
   "react",
@@ -34,7 +35,7 @@ const css = readFileSync(
   const bytes = readFileSync(require.resolve("katex/dist/" + path));
   return `url(data:font/woff2;base64,${bytes.toString("base64")})`;
 });
-function htmlDocument(source: string) {
+async function htmlDocument(source: string) {
   type Element = DefaultTreeAdapterMap["element"];
   const document = parse(source);
   const html = document.childNodes.find(
@@ -46,6 +47,26 @@ function htmlDocument(source: string) {
   const body = html.childNodes.find(
     (node): node is Element => node.nodeName === "body",
   )!;
+  let scriptCount = 0;
+  async function embedScripts(
+    node: DefaultTreeAdapterMap["node"],
+  ): Promise<void> {
+    if ("tagName" in node && node.tagName === "script") {
+      const src = node.attrs.find((attr) => attr.name === "src");
+      if (src && !src.value.startsWith("data:")) {
+        if (++scriptCount > 16)
+          throw new Error("An artifact may declare at most 16 CDN scripts");
+        src.value = await loadCdnScript(
+          src.value,
+          node.attrs.find((attr) => attr.name === "integrity")?.value,
+        );
+        node.attrs = node.attrs.filter((attr) => attr.name !== "integrity");
+      }
+    }
+    if ("childNodes" in node)
+      for (const child of node.childNodes) await embedScripts(child);
+  }
+  await embedScripts(html);
   // Atelier owns encoding, viewport, and security policy. Keep authored styles,
   // scripts, metadata, and attributes on the single document shell.
   head.childNodes = head.childNodes.filter((node) => {
@@ -493,7 +514,7 @@ export async function render(
   }
   const document =
     content.kind === "html"
-      ? htmlDocument(body)
+      ? await htmlDocument(body)
       : {
           htmlOpen: "<html>",
           headOpen: "<head>",
@@ -511,6 +532,6 @@ export async function render(
   };
   const bootstrap = `const __name=(fn)=>fn;(${bridge.toString()})(${escape(JSON.stringify(config))});`;
   const policy =
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' data: https://fonts.googleapis.com; img-src data: blob:; font-src data: https://fonts.gstatic.com; connect-src 'none'; media-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+    "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data: https://fonts.googleapis.com; img-src data: blob:; font-src data: https://fonts.gstatic.com; connect-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'";
   return `<!doctype html>${document.htmlOpen}${document.headOpen}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html{color-scheme:light}body{margin:0;color:#292722;font-family:system-ui,sans-serif}*{box-sizing:border-box}.document{max-width:860px;margin:auto;padding:48px;line-height:1.75}.document h1,.document h2,.document h3{line-height:1.2}.document img,svg{max-width:100%}.document pre{padding:20px;background:#f4f3ef;overflow:auto}.document table{border-collapse:collapse;width:100%}.document td,.document th{padding:10px;border:1px solid #ddd;text-align:left}.document blockquote{border-left:3px solid #c8a780;margin:24px 0;padding-left:20px;color:#666}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{padding:0}pre,figure,tr{break-inside:avoid}}${styles.replace(/<\/style/gi, "<\\/style")}</style><script>${bootstrap.replace(/<\/script/gi, "<\\/script")}</script>${document.head}</head>${document.bodyOpen}${document.body}<script>${script.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
 }

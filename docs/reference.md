@@ -72,6 +72,31 @@ Images can be data URLs or files in the content object. SVG files contain SVG te
 
 React and HTML support mixed content in a single artifact. Markdown supports tables, code blocks, KaTeX math, and Mermaid code fences. SVG artifacts render the supplied SVG source.
 
+### CDN scripts
+
+HTML artifacts can declare scripts from these HTTPS sources:
+
+| Source | URL form |
+| --- | --- |
+| cdnjs | `https://cdnjs.cloudflare.com/ajax/libs/LIBRARY/VERSION/FILE.js` |
+| jsDelivr npm | `https://cdn.jsdelivr.net/npm/PACKAGE@VERSION/FILE.js` |
+| UNPKG | `https://unpkg.com/PACKAGE@VERSION/FILE.js` |
+| Tailwind | `https://cdn.tailwindcss.com/VERSION` |
+| jQuery | `https://code.jquery.com/jquery-VERSION.min.js` |
+| jQuery UI | `https://code.jquery.com/ui/VERSION/jquery-ui.min.js` |
+
+Use an exact version published at least 14 days ago. Tags, version ranges, unversioned URLs, query parameters, and redirects are rejected. npm publication metadata supplies the release date. For cdnjs, the library must have a verifiable npm source; use an npm CDN URL if it does not.
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<button id="example">Click me</button>
+<script>$('#example').on('click', function () { $(this).text('Clicked'); });</script>
+```
+
+Atelier downloads and embeds only the declared JavaScript file. Libraries cannot fetch extra scripts, workers, fonts, map tiles, or data at runtime. Use a self-contained browser build; module files with external imports will not work. External stylesheets are limited to Google Fonts, with font files from `fonts.gstatic.com`. Inline CSS and local CSS files remain supported.
+
+The loader checks supplied `integrity` hashes, limits each script to 5 MiB, and accepts at most 16 CDN scripts per artifact. Verification failures appear as preview errors. Exported HTML embeds the scripts, so those scripts do not need a network connection after export. Google Fonts still require internet access.
+
 ### Supported libraries
 
 The artifact bundler accepts these packages:
