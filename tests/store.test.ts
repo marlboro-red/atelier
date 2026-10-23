@@ -107,6 +107,13 @@ test("rename preserves identity and history; delete atomically removes owned dat
       anchor: null,
     });
     store.setData(artifact.id, { saved: true });
+    assert.equal(
+      store.saveThumbnail(artifact.id, 1, Buffer.from("first")),
+      true,
+    );
+    assert.ok(
+      store.list().find((item) => item.id === artifact.id)?.thumbnailVersion,
+    );
     const renamed = store.rename(artifact.id, " New name ");
     assert.equal(renamed.id, artifact.id);
     assert.equal(renamed.title, "New name");
@@ -124,16 +131,33 @@ test("rename preserves identity and history; delete atomically removes owned dat
       commentIds: [],
     });
     assert.throws(() => store.remove(artifact.id, 1), /newer revision/);
+    assert.equal(
+      store.saveThumbnail(artifact.id, 1, Buffer.from("stale")),
+      false,
+    );
+    assert.throws(() => store.thumbnail(artifact.id), /current revision/);
+    assert.equal(
+      store.saveThumbnail(artifact.id, 2, Buffer.from("second")),
+      true,
+    );
+    assert.equal(
+      Buffer.from(store.thumbnail(artifact.id)).toString(),
+      "second",
+    );
     assert.equal(store.comments(artifact.id).length, 1);
     store.remove(artifact.id, 2);
     assert.throws(() => store.get(artifact.id), /not found/);
-    for (const table of ["revisions", "comments", "app_data"])
+    for (const table of ["revisions", "comments", "app_data", "thumbnails"])
       assert.equal(
         store.db
           .prepare(`SELECT count(*) AS count FROM ${table} WHERE artifact_id=?`)
           .get(artifact.id)!.count,
         0,
       );
+    assert.equal(
+      store.saveThumbnail(artifact.id, 2, Buffer.from("deleted")),
+      false,
+    );
     assert.equal(store.get(other.id).title, "Keep");
   } finally {
     store.close();

@@ -247,7 +247,9 @@ test("the library receives agent creations and has no authoring controls", async
     },
   });
   await page.getByLabel("Search artifacts").fill(title);
-  await page.getByRole("button", { name: new RegExp(title) }).click();
+  await page
+    .getByRole("button", { name: `Open ${title}`, exact: true })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/a/${a.id}$`));
   await expect(
     page

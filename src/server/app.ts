@@ -61,12 +61,20 @@ export function createApp(store: Store, previewPort = 4311) {
         ],
         durationMs: 0,
       };
-    return checkPreview(
+    const { thumbnail, ...report } = await checkPreview(
       `http://127.0.0.1:${address.port}/a/${encodeURIComponent(id)}/revisions/${revision}`,
       revision,
       viewport,
       screenshot,
     );
+    if (
+      thumbnail &&
+      viewport.width === 1280 &&
+      viewport.height === 900 &&
+      store.saveThumbnail(id, revision, Buffer.from(thumbnail, "base64"))
+    )
+      changed(id);
+    return report;
   }
   const changed = (id: string) => events.emit("change", { id });
   const params = (req: any) =>
@@ -79,6 +87,12 @@ export function createApp(store: Store, previewPort = 4311) {
     return reply.code(201).send({ ...a, preview: await check(a.id, a.head) });
   });
   app.get("/api/artifacts/:id", async (req) => store.get(params(req).id));
+  app.get("/api/artifacts/:id/thumbnail", async (req, reply) =>
+    reply
+      .type("image/jpeg")
+      .header("Cache-Control", "private, max-age=3600")
+      .send(Buffer.from(store.thumbnail(params(req).id))),
+  );
   app.patch("/api/artifacts/:id", async (req) => {
     const id = params(req).id;
     const { title } = z

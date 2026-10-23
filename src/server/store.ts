@@ -26,13 +26,21 @@ export class Store {
  CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS revisions (artifact_id TEXT NOT NULL REFERENCES artifacts(id), number INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(artifact_id,number));
  CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id), data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS thumbnails (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), revision INTEGER NOT NULL, version TEXT NOT NULL, image BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS app_data (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), data TEXT NOT NULL);`);
   }
   list(): Artifact[] {
     return this.db
-      .prepare("SELECT data FROM artifacts")
+      .prepare(
+        "SELECT artifacts.data, thumbnails.revision AS thumbnail_revision, thumbnails.version AS thumbnail_version FROM artifacts LEFT JOIN thumbnails ON thumbnails.artifact_id=artifacts.id",
+      )
       .all()
-      .map((r) => JSON.parse(r.data as string))
+      .map((r) => {
+        const artifact = JSON.parse(r.data as string);
+        if (r.thumbnail_revision === artifact.head)
+          artifact.thumbnailVersion = r.thumbnail_version;
+        return artifact;
+      })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
   get(id: string): Artifact {
@@ -123,6 +131,7 @@ export class Store {
         );
       this.db.prepare("DELETE FROM comments WHERE artifact_id=?").run(id);
       this.db.prepare("DELETE FROM app_data WHERE artifact_id=?").run(id);
+      this.db.prepare("DELETE FROM thumbnails WHERE artifact_id=?").run(id);
       this.db.prepare("DELETE FROM revisions WHERE artifact_id=?").run(id);
       this.db.prepare("DELETE FROM artifacts WHERE id=?").run(id);
     });
@@ -230,6 +239,29 @@ export class Store {
         "INSERT INTO app_data VALUES (?,?) ON CONFLICT(artifact_id) DO UPDATE SET data=excluded.data",
       )
       .run(id, JSON.stringify(data));
+  }
+  saveThumbnail(id: string, revision: number, image: Uint8Array): boolean {
+    const row = this.db
+      .prepare("SELECT data FROM artifacts WHERE id=?")
+      .get(id);
+    // A slower check must not replace a newer revision's preview, or recreate
+    // a preview for an artifact deleted while the browser was running.
+    if (!row || JSON.parse(row.data as string).head !== revision) return false;
+    this.db
+      .prepare(
+        "INSERT INTO thumbnails VALUES (?,?,?,?) ON CONFLICT(artifact_id) DO UPDATE SET revision=excluded.revision, version=excluded.version, image=excluded.image",
+      )
+      .run(id, revision, `${revision}-${randomUUID()}`, image);
+    return true;
+  }
+  thumbnail(id: string): Uint8Array {
+    const artifact = this.get(id);
+    const row = this.db
+      .prepare("SELECT revision,image FROM thumbnails WHERE artifact_id=?")
+      .get(id);
+    if (!row || row.revision !== artifact.head)
+      throw new HttpError(404, "No preview for the current revision");
+    return row.image as Uint8Array;
   }
   close() {
     this.db.close();

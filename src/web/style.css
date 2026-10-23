@@ -562,59 +562,100 @@ button svg {
   background: none;
   font-size: 11px;
 }
-.artifact-row {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  width: 100%;
-  padding: 24px 8px;
-  border-bottom: 1px solid #e3e7db;
+.artifact-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 20px;
-  transition: background 0.15s;
+  padding: 24px 0;
 }
-.artifact-row:hover {
-  background: #f0f3e9;
-  color: inherit;
+.artifact-card {
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e0e5d9;
+  border-radius: 8px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
-.artifact-initial {
-  width: 42px;
-  height: 47px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  background: #e7eddd;
-  color: #8a9d73;
-  font:
-    24px Georgia,
-    serif;
-  flex-shrink: 0;
+.artifact-card:hover {
+  border-color: #bcc9b3;
+  box-shadow: 0 5px 20px #26331c0a;
 }
-.artifact-description {
+.artifact-card-open {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  width: 100%;
+  text-align: left;
 }
-.artifact-description strong {
-  font-size: 14px;
-  font-weight: 500;
+.artifact-card-open:hover {
+  color: inherit;
 }
-.artifact-description small {
+.artifact-thumbnail {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/10;
+  overflow: hidden;
+  background: #f2f4ed;
+  border-bottom: 1px solid #e8ebe3;
+}
+.artifact-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+.thumbnail-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #99a58f;
   font-size: 11px;
-  color: #9aa58c;
+}
+.artifact-card-title {
+  display: block;
+  padding: 16px 16px 0;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.row-version {
+.artifact-card-description {
+  padding: 7px 16px 0;
   font-size: 10px;
-  color: #a4ae98;
-  margin-right: 12px;
+  color: #929d87;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.artifact-row > svg {
-  color: #97a781;
+.artifact-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 10px 16px;
+  color: #929d87;
+  font-size: 10px;
+}
+.artifact-card-footer > div {
+  display: flex;
+  gap: 2px;
+}
+.artifact-card-footer button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+}
+.artifact-card-footer button:hover {
+  background: #f0f3e9;
 }
 .library-footer {
   display: flex;
@@ -963,12 +1004,6 @@ button svg {
     flex-direction: column;
     gap: 10px;
   }
-  .artifact-row {
-    gap: 12px;
-  }
-  .artifact-description strong {
-    font-size: 12px;
-  }
   .review-menu {
     width: 300px;
     max-width: calc(100vw - 24px);
@@ -1006,9 +1041,6 @@ button svg {
   }
   .review-panel .empty-comments {
     padding: 10px;
-  }
-  .artifact-description small {
-    max-width: 50vw;
   }
   .review-panel .empty-comments h3 {
     font-size: 16px;

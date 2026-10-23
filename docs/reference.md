@@ -222,6 +222,12 @@ The stdio server exposes these tools:
 
 Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution.
 
+### Library previews
+
+The home view displays cards with cached screenshots of the artifact content, without the workspace header. Default-viewport publish checks capture a preview for the current revision. Missing previews for older artifacts are generated as their cards become visible. Chromium must be installed; otherwise the cards show a placeholder.
+
+Screenshots are stored locally with the artifact. A check for an older revision cannot overwrite the current preview. Rename preserves it; deletion removes it along with revisions, comments, and app data. Card actions and the Review menu both support Rename and Delete.
+
 ### Preview checks
 
 Create, revise, restore, and duplicate responses include a `preview` result. Atelier opens the saved revision in the real workspace using Chromium, waits for readiness, and reports runtime errors, console errors, failed requests, and horizontal overflow. It simulates app-data writes so the check cannot change saved data.
@@ -296,6 +302,7 @@ Paths are relative to `/api`. Request and response bodies use JSON, except expor
 | GET | `/artifacts` | List artifacts |
 | POST | `/artifacts` | Create an artifact |
 | GET | `/artifacts/:id` | Read metadata and `head` |
+| GET | `/artifacts/:id/thumbnail` | Read the current revision’s cached JPEG preview |
 | PATCH | `/artifacts/:id` | Rename an artifact |
 | DELETE | `/artifacts/:id` | Delete the artifact and its owned data |
 | GET | `/artifacts/:id/revisions` | List revision metadata |

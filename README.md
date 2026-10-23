@@ -124,7 +124,7 @@ The agent saves a new revision under the same artifact ID. Click **Review**, the
 
 ## Manage artifacts
 
-Open **Review → Rename** to change an artifact's name without changing its ID or revision history. **Review → Delete artifact** asks for confirmation, then permanently removes the artifact, its revisions, comments, and saved data.
+The home view shows artifacts as cards with visual previews. Use the Rename and Delete actions on a card, or open **Review → Rename** to change an artifact's name without changing its ID or revision history. **Delete artifact** asks for confirmation, then permanently removes the artifact, its revisions, comments, and saved data.
 
 ## Export a revision
 

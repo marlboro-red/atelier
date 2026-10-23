@@ -60,6 +60,7 @@ export interface Artifact {
   head: number;
   createdAt: string;
   updatedAt: string;
+  thumbnailVersion?: string;
 }
 export interface Revision {
   artifactId: string;

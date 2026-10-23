@@ -110,6 +110,43 @@ function App() {
       setManaging(false);
     }
   }
+  const thumbnailAttempts = useRef(new Set<string>());
+  const thumbnailQueue = useRef(Promise.resolve());
+  useEffect(() => {
+    if (locationState.id) return;
+    let cancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const item = artifacts.find(
+            (a) => a.id === (entry.target as HTMLElement).dataset.artifactId,
+          );
+          if (!item || item.thumbnailVersion) continue;
+          observer.unobserve(entry.target);
+          thumbnailQueue.current = thumbnailQueue.current.then(async () => {
+            const key = `${item.id}:${item.head}`;
+            if (cancelled || thumbnailAttempts.current.has(key)) return;
+            thumbnailAttempts.current.add(key);
+            try {
+              await api(
+                `/artifacts/${item.id}/check`,
+                post({ revision: item.head }),
+              );
+            } catch {}
+          });
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    document
+      .querySelectorAll(".artifact-card")
+      .forEach((card) => observer.observe(card));
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [artifacts, locationState.id, search]);
   const iframe = useRef<HTMLIFrameElement>(null);
   const snapshotResolvers = useRef(new Map<string, (value: unknown) => void>());
   const requestCounter = useRef(0);
@@ -901,21 +938,56 @@ function App() {
               </div>
               <div className="artifact-list">
                 {filtered.map((a) => (
-                  <button
-                    className="artifact-row"
+                  <article
+                    className="artifact-card"
                     key={a.id}
-                    onClick={() => navigate(a.id)}
+                    data-artifact-id={a.id}
                   >
-                    <span className="artifact-initial">
-                      {a.title.charAt(0)}
-                    </span>
-                    <span className="artifact-description">
-                      <strong>{a.title}</strong>
-                      <small>{a.description || "Open artifact"}</small>
-                    </span>
-                    <span className="row-version">v{a.head}</span>
-                    <ArrowUpRight size={17} />
-                  </button>
+                    <button
+                      className="artifact-card-open"
+                      aria-label={`Open ${a.title}`}
+                      onClick={() => navigate(a.id)}
+                    >
+                      <span className="artifact-thumbnail">
+                        {a.thumbnailVersion ? (
+                          <img
+                            src={`/api/artifacts/${a.id}/thumbnail?v=${encodeURIComponent(a.thumbnailVersion)}`}
+                            alt={`Preview of ${a.title}`}
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="thumbnail-placeholder">
+                            <Code2 size={28} />
+                            <span>Preview unavailable</span>
+                          </span>
+                        )}
+                      </span>
+                      <span className="artifact-card-title">{a.title}</span>
+                      <span className="artifact-card-description">
+                        {a.description || a.kind.toUpperCase()}
+                      </span>
+                    </button>
+                    <div className="artifact-card-footer">
+                      <span>v{a.head}</span>
+                      <div>
+                        <button
+                          aria-label={`Rename ${a.title}`}
+                          title="Rename"
+                          onClick={() => manage("rename", a)}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          aria-label={`Delete ${a.title}`}
+                          title="Delete artifact"
+                          className="danger-action"
+                          onClick={() => manage("delete", a)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </article>
                 ))}
                 {!filtered.length && (
                   <p className="no-results">No artifacts match your search.</p>

@@ -8,6 +8,7 @@ export type PreviewCheck = {
   warnings: string[];
   durationMs: number;
   screenshot?: { mimeType: "image/png"; data: string };
+  thumbnail?: string;
 };
 let running = 0;
 // Browser checks are bounded; a burst of publications must not launch an
@@ -151,6 +152,17 @@ export async function checkPreview(
         "App-data writes were simulated during this check; saved data was not changed.",
       );
     const report = result(errors.length ? "failed" : "passed");
+    if (state.ready && frame) {
+      try {
+        report.thumbnail = (
+          await page
+            .locator("iframe")
+            .screenshot({ type: "jpeg", quality: 60, timeout: 5000 })
+        ).toString("base64");
+      } catch {
+        report.warnings.push("Could not capture an artifact thumbnail.");
+      }
+    }
     if (screenshot)
       report.screenshot = {
         mimeType: "image/png",
