@@ -35,7 +35,7 @@ const program = new Command()
   .version("0.1.0");
 program
   .command("install-browser")
-  .description("Install Chromium for PDF export")
+  .description("Install Chromium for preview checks and PDF export")
   .action(async () => {
     const require = createRequire(import.meta.url);
     const cli = resolve(
@@ -170,6 +170,31 @@ program
     ),
   );
 program
+  .command("check <id>")
+  .description(
+    "Load the workspace preview in Chromium and report runtime errors",
+  )
+  .option("-r, --revision <number>")
+  .option("--width <pixels>", "Viewport width", "1280")
+  .option("--height <pixels>", "Viewport height", "900")
+  .option("--screenshot <file>", "Save a PNG of the checked workspace")
+  .action(async (id, options) => {
+    const report = await request(`/artifacts/${segment(id)}/check`, "POST", {
+      revision: options.revision ? Number(options.revision) : undefined,
+      width: Number(options.width),
+      height: Number(options.height),
+      screenshot: !!options.screenshot,
+    });
+    if (report.screenshot) {
+      await writeFile(
+        options.screenshot,
+        Buffer.from(report.screenshot.data, "base64"),
+      );
+      report.screenshot = resolve(options.screenshot);
+    }
+    print(report);
+  });
+program
   .command("history <id>")
   .action(async (id) =>
     print(await request(`/artifacts/${segment(id)}/revisions`)),
@@ -224,7 +249,7 @@ program
       { name: "atelier", version: "0.1.0" },
       {
         instructions:
-          'Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the space below Atelier\'s thin review header. Do not add workspace headers or sidebars to artifact content. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. For large artifacts use filePath or filePaths to read existing local files without repeating their contents in a tool call. Paths are absolute and read on the MCP host. Publish results omit source; use get_artifact to read it. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Prefer Pele for Mermaid diagrams: import { mount } from "pele" in React effects and call the returned handle.destroy() on cleanup; theme with --pele-* CSS variables. Markdown mermaid code fences render with Pele automatically. Existing mermaid imports remain supported for compatibility. React imports use curated browser dependencies. HTML may declare script tags from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com, or code.jquery.com. Each CDN script must use an exact version published at least 14 days ago and an explicit JavaScript file (Tailwind uses /VERSION). Atelier verifies the npm publication date and embeds only that script. Unverifiable dates, unversioned URLs, redirects, and runtime network dependencies are rejected or blocked. External stylesheets are limited to Google Fonts; inline and artifact-local CSS work. The React entry must default-export a component. Write HTML as a page fragment with optional style and script tags; Atelier supplies the doctype, html, head, body, security policy, and runtime. Full HTML documents are accepted for compatibility and normalized into that shell. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.',
+          'Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the space below Atelier\'s thin review header. Do not add workspace headers or sidebars to artifact content. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. For large artifacts use filePath or filePaths to read existing local files without repeating their contents in a tool call. Paths are absolute and read on the MCP host. Publish results omit source; use get_artifact to read it. Every publication includes a preview result from a Chromium workspace load check. A failed or unavailable check does not undo the saved revision. Fix reported errors by revising the same artifact. Use check_artifact to retry or check another viewport. A passing load check does not prove visual quality or interactions. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Prefer Pele for Mermaid diagrams: import { mount } from "pele" in React effects and call the returned handle.destroy() on cleanup; theme with --pele-* CSS variables. Markdown mermaid code fences render with Pele automatically. Existing mermaid imports remain supported for compatibility. React imports use curated browser dependencies. HTML may declare script tags from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com, or code.jquery.com. Each CDN script must use an exact version published at least 14 days ago and an explicit JavaScript file (Tailwind uses /VERSION). Atelier verifies the npm publication date and embeds only that script. Unverifiable dates, unversioned URLs, redirects, and runtime network dependencies are rejected or blocked. External stylesheets are limited to Google Fonts; inline and artifact-local CSS work. The React entry must default-export a component. Write HTML as a page fragment with optional style and script tags; Atelier supplies the doctype, html, head, body, security policy, and runtime. Full HTML documents are accepted for compatibility and normalized into that shell. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.',
       },
     );
     const tool = (
@@ -238,9 +263,23 @@ program
         { description, inputSchema: schema },
         async (args: any) => {
           try {
+            const result: any = await fn(args);
+            if (result?.screenshot?.mimeType === "image/png") {
+              const { screenshot, ...report } = result;
+              return {
+                content: [
+                  { type: "text" as const, text: JSON.stringify(report) },
+                  {
+                    type: "image" as const,
+                    mimeType: screenshot.mimeType,
+                    data: screenshot.data,
+                  },
+                ],
+              };
+            }
             return {
               content: [
-                { type: "text" as const, text: JSON.stringify(await fn(args)) },
+                { type: "text" as const, text: JSON.stringify(result) },
               ],
             };
           } catch (e: any) {
@@ -345,6 +384,24 @@ program
         );
         return publishResult(artifact);
       },
+    );
+    tool(
+      "check_artifact",
+      "Load an artifact revision in the workspace using Chromium. Report runtime/CSP errors and horizontal overflow. This is a load check, not a visual or interaction audit. App-data writes are simulated, not persisted.",
+      {
+        id: z.string(),
+        revision: z.number().int().positive().optional(),
+        width: z.number().int().min(320).max(2560).optional(),
+        height: z.number().int().min(320).max(2160).optional(),
+        screenshot: z
+          .boolean()
+          .optional()
+          .describe(
+            "Return a PNG image of the checked workspace alongside the report.",
+          ),
+      },
+      ({ id, ...options }) =>
+        request(`/artifacts/${segment(id)}/check`, "POST", options),
     );
     tool(
       "list_revisions",

@@ -138,6 +138,18 @@ export function Diagram({ source }) {
 
 For Markdown, use a `mermaid` code fence. For React charts, give responsive chart containers an explicit height; a percentage-height chart in a zero-height parent will be invisible.
 
+## Check the published page
+
+Every publication returns its browser URL and a `preview` report. Do not repeat creation when a check fails: the artifact and revision already exist. Read the errors, fix the source, and revise the same ID.
+
+For MCP, use `check_artifact` with `id`, `width: 390`, `height: 844`, and `screenshot: true` to receive a narrow-viewport image. For the CLI:
+
+```sh
+atelier check ARTIFACT_ID --width 390 --height 844 --screenshot preview.png
+```
+
+The screenshot is a view of the workspace. Shared HTML and PDF still omit its header. The check does not exercise controls; test important interactions separately when browser tools are available.
+
 ## Sharing
 
 HTML exports embed declared CDN scripts and local assets, but Google Fonts remain remote. Prefer an included font or a system stack when the recipient must work offline. The exported file is sandboxed, fills the viewport, and contains no review header. Use the Atelier data API rather than trying to access its parent or browser storage directly.

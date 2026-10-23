@@ -17,7 +17,7 @@ atelier install-browser
 atelier start
 ```
 
-`npm install` builds the browser app automatically. `npm link` makes the `atelier` command available globally and points it to this directory. Skip `atelier install-browser` if you do not need PDF exports.
+`npm install` builds the browser app automatically. `npm link` makes the `atelier` command available globally and points it to this directory. `atelier install-browser` supplies Chromium for automatic preview checks and PDF export. Without it, artifacts still save, but checks report `unavailable`.
 
 Atelier is not published to the npm registry, so `npm install --global atelier` is not supported.
 

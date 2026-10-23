@@ -60,6 +60,6 @@ Read [examples.md](references/examples.md) when you need a content payload, HTML
 
 ## Check and deliver
 
-If browser tools are available, open the returned workspace URL, check runtime errors, exercise the important interaction, and inspect a narrow viewport. For sharing tasks, also open the exported HTML or inspect the PDF; preview success alone does not prove export fidelity. Do not open the internal `/preview/` endpoint as a top-level page.
+Inspect the `preview` result returned by each publication. The revision is saved even if the check fails or is unavailable. Fix reported errors under the same artifact ID. Use `check_artifact` to retry, check a narrow viewport, or request `screenshot: true` for a rendered image. A passing load check does not prove visual quality or interactions. If browser tools are available, open the returned workspace URL and exercise the important interaction. For sharing tasks, also open the exported HTML or inspect the PDF; preview success alone does not prove export fidelity. Do not open the internal `/preview/` endpoint as a top-level page.
 
 Fix problems attributable to your change and revise the same artifact. If a tool or visual check is unavailable, state that limitation rather than claiming it passed. Return the actual artifact URL and a brief description of what changed. Do not present a localhost URL as a publicly hosted share link; recipients need the exported document.

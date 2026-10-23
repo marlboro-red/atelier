@@ -9,6 +9,7 @@ import {
   commentSchema,
 } from "../shared/schema.js";
 import { render } from "./render.js";
+import { checkPreview, type PreviewCheck } from "./check.js";
 import { workspacePolicy } from "../shared/security.js";
 export function createApp(store: Store, previewPort = 4311) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
@@ -42,6 +43,31 @@ export function createApp(store: Store, previewPort = 4311) {
       .code(e.statusCode ?? 500)
       .send({ error: e.message ?? "Internal error" });
   });
+  async function check(
+    id: string,
+    revision: number,
+    viewport = { width: 1280, height: 900 },
+    screenshot = false,
+  ): Promise<PreviewCheck> {
+    const address = app.server.address();
+    if (!address || typeof address === "string")
+      return {
+        status: "unavailable",
+        revision,
+        viewport,
+        errors: [],
+        warnings: [
+          "The workspace must be listening on a TCP port for a browser check.",
+        ],
+        durationMs: 0,
+      };
+    return checkPreview(
+      `http://127.0.0.1:${address.port}/a/${encodeURIComponent(id)}/revisions/${revision}`,
+      revision,
+      viewport,
+      screenshot,
+    );
+  }
   const changed = (id: string) => events.emit("change", { id });
   const params = (req: any) =>
     req.params as { id: string; n: string; cid: string };
@@ -50,7 +76,7 @@ export function createApp(store: Store, previewPort = 4311) {
   app.post("/api/artifacts", async (req, reply) => {
     const a = store.create(createSchema.parse(req.body));
     changed(a.id);
-    return reply.code(201).send(a);
+    return reply.code(201).send({ ...a, preview: await check(a.id, a.head) });
   });
   app.get("/api/artifacts/:id", async (req) => store.get(params(req).id));
   app.get("/api/artifacts/:id/revisions", async (req) =>
@@ -68,7 +94,7 @@ export function createApp(store: Store, previewPort = 4311) {
     const id = params(req).id;
     const r = store.update(id, revisionSchema.parse(req.body));
     changed(id);
-    return reply.code(201).send(r);
+    return reply.code(201).send({ ...r, preview: await check(id, r.number) });
   });
   app.post("/api/artifacts/:id/restore", async (req) => {
     const id = params(req).id;
@@ -87,7 +113,7 @@ export function createApp(store: Store, previewPort = 4311) {
       commentIds: [],
     });
     changed(id);
-    return r;
+    return { ...r, preview: await check(id, r.number) };
   });
   app.post("/api/artifacts/:id/duplicate", async (req) => {
     const id = params(req).id;
@@ -106,7 +132,28 @@ export function createApp(store: Store, previewPort = 4311) {
       content: store.revision(id, body.revision).content,
     });
     changed(copy.id);
-    return copy;
+    return { ...copy, preview: await check(copy.id, copy.head) };
+  });
+  app.post("/api/artifacts/:id/check", async (req) => {
+    const id = params(req).id;
+    const input = z
+      .object({
+        revision: z.number().int().positive().optional(),
+        width: z.number().int().min(320).max(2560).default(1280),
+        height: z.number().int().min(320).max(2160).default(900),
+        screenshot: z.boolean().default(false),
+      })
+      .parse(req.body ?? {});
+    const revision = store.revision(id, input.revision);
+    return check(
+      id,
+      revision.number,
+      {
+        width: input.width,
+        height: input.height,
+      },
+      input.screenshot,
+    );
   });
   app.get("/api/artifacts/:id/comments", async (req) =>
     store.comments(params(req).id),

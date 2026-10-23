@@ -8,7 +8,7 @@ The service binds to `127.0.0.1`. MCP responses use `atelier.localhost` for brow
 
 The default database is `~/.atelier/atelier.sqlite`. SQLite stores artifact metadata, complete source revisions, comments, and app data. Revision content and metadata commit in one transaction. A file-copy backup requires the service to be stopped and the complete data directory to be copied.
 
-The `start` command runs in the foreground and opens the browser. `start --no-open` and `npm start` run without opening the browser. `npm link` makes the `atelier` command available globally. `atelier install-browser` installs Chromium for PDF export. See the [installation guide](../README.md#install-and-start) for setup instructions.
+The `start` command runs in the foreground and opens the browser. `start --no-open` and `npm start` run without opening the browser. `npm link` makes the `atelier` command available globally. `atelier install-browser` installs Chromium for preview checks and PDF export. See the [installation guide](../README.md#install-and-start) for setup instructions.
 
 Environment variables control the service and its clients:
 
@@ -214,12 +214,27 @@ The stdio server exposes these tools:
 | `revise_artifact` | Saves a revision under the same ID |
 | `restore_artifact` | Copies an earlier revision into a new revision |
 | `duplicate_artifact` | Copies a revision into a separate artifact |
+| `check_artifact` | Loads a revision in Chromium; optionally returns a screenshot |
 | `list_revisions` | Reads revision history |
 | `list_comments` | Reads feedback and replies |
 | `add_comment` | Adds a comment to a specified revision |
 | `reply_to_comment` | Adds a reply or changes comment status |
 
 Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution.
+
+### Preview checks
+
+Create, revise, restore, and duplicate responses include a `preview` result. Atelier opens the saved revision in the real workspace using Chromium, waits for readiness, and reports runtime errors, console errors, failed requests, and horizontal overflow. It simulates app-data writes so the check cannot change saved data.
+
+`preview.status` is `passed`, `failed`, or `unavailable`. Missing Chromium or a busy checker produces `unavailable`; install the browser with `atelier install-browser` or retry. The revision is already saved regardless of check status. Fix errors by revising the same artifact, not by repeating its creation.
+
+The default viewport is 1280 × 900. Use `check_artifact` with `id`, optional `revision`, `width`, `height`, and `screenshot: true` to inspect another viewport. MCP returns the screenshot as an image alongside the report. The CLI can save it directly:
+
+```sh
+atelier check ARTIFACT_ID --width 390 --height 844 --screenshot preview.png
+```
+
+Checks run briefly after initial load. A pass is not a visual review or an interaction test; use the screenshot to inspect the layout and browser tools for deeper interaction testing. Two checks may run concurrently; additional calls report that the checker is busy.
 
 ### File inputs for MCP
 
@@ -258,6 +273,7 @@ atelier comments ARTIFACT_ID
 atelier revise ARTIFACT_ID report.md --base 1 --message "Clarify the introduction" --comments COMMENT_ID
 atelier reply ARTIFACT_ID COMMENT_ID "Updated the introduction."
 atelier history ARTIFACT_ID
+atelier check ARTIFACT_ID
 atelier export ARTIFACT_ID --format html --output report.html
 ```
 
@@ -291,6 +307,7 @@ Paths are relative to `/api`. Request and response bodies use JSON, except expor
 | GET | `/artifacts/:id/data` | Read `{data}` |
 | PUT | `/artifacts/:id/data` | Write `{data}` |
 | POST | `/artifacts/:id/export` | Export HTML or PDF |
+| POST | `/artifacts/:id/check` | Check a revision in the workspace browser |
 | GET | `/events` | Server-sent change events |
 
 Write requests accept these fields:
@@ -305,6 +322,7 @@ Write requests accept these fields:
 | Update comment | None | `reply`, `author`, `status` |
 | Write app data | `data` | None |
 | Export | `revision`, `format` | `snapshot` |
+| Preview check | None | `revision`, `width`, `height`, `screenshot` |
 
 The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. The API body limit is 32 MiB.
 
