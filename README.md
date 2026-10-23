@@ -124,7 +124,7 @@ Start a new agent session to load the connection. Ask the agent to create an art
 
 > Create a report in Atelier with text, an interactive chart, and a diagram. Give me the artifact URL.
 
-The agent returns a URL such as `http://127.0.0.1:4310/a/<id>`. Open that URL to view the page. The artifact also appears in the library at the root URL.
+The agent returns a URL such as `http://atelier.localhost:4310/a/<id>`. Open that URL to view the page. The artifact also appears in the library at the root URL.
 
 ## Request a change
 

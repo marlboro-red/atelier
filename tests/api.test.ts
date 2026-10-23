@@ -65,7 +65,11 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
     const comments = await call("list_comments", { id: a.id });
     assert.equal(comments[0].status, "addressed");
     assert.equal(comments[0].replies.length, 1);
-    assert.equal(a.url, `${address}/a/${a.id}`);
+    const browserBase = address.replace("127.0.0.1", "atelier.localhost");
+    assert.equal(a.url, `${browserBase}/a/${a.id}`);
+    assert.equal(latest.url, `${browserBase}/a/${a.id}`);
+    const historical = await call("get_artifact", { id: a.id, revision: 1 });
+    assert.equal(historical.url, `${browserBase}/a/${a.id}/revisions/1`);
     const restored = await call("restore_artifact", {
       id: a.id,
       revision: 1,
@@ -82,6 +86,7 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
     });
     assert.notEqual(copy.id, a.id);
     assert.equal(copy.head, 1);
+    assert.equal(copy.url, `${browserBase}/a/${copy.id}`);
     const crossOrigin = await app.inject({
       method: "POST",
       url: "/api/artifacts",

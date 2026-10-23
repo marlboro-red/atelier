@@ -4,7 +4,7 @@ This document describes Atelier's runtime, artifact format, and agent interfaces
 
 ## Runtime and storage
 
-The service binds to `127.0.0.1`. The browser app and API use port `4310`. Artifact previews use a separate origin on port `4311`.
+The service binds to `127.0.0.1`. MCP responses use `atelier.localhost` for browser links when the service address is `127.0.0.1` or `localhost`, preserving the configured port. The browser app and API use port `4310`. Artifact previews use a separate origin on port `4311`.
 
 The default database is `~/.atelier/atelier.sqlite`. SQLite stores artifact metadata, complete source revisions, comments, and app data. Revision content and metadata commit in one transaction. A file-copy backup requires the service to be stopped and the complete data directory to be copied.
 

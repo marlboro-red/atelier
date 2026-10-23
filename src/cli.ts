@@ -11,6 +11,12 @@ import { contentSchema, anchorSchema } from "./shared/schema.js";
 const base =
   process.env.ATELIER_URL ??
   `http://127.0.0.1:${process.env.ATELIER_PORT ?? 4310}`;
+// Keep API requests on loopback; browser links use the workspace hostname.
+const browserAddress = new URL(base);
+if (["127.0.0.1", "localhost"].includes(browserAddress.hostname)) {
+  browserAddress.hostname = "atelier.localhost";
+}
+const browserBase = browserAddress.toString().replace(/\/$/, "");
 async function request(path: string, method = "GET", body?: unknown) {
   const response = await fetch(base + "/api" + path, {
     method,
@@ -240,7 +246,7 @@ program
         const artifact = await request("/artifacts/" + segment(id));
         return {
           artifact,
-          url: `${base}/a/${id}${revision ? `/revisions/${revision}` : ""}`,
+          url: `${browserBase}/a/${id}${revision ? `/revisions/${revision}` : ""}`,
           revision: await request(
             `/artifacts/${segment(id)}/revisions/${revision ?? artifact.head}`,
           ),
@@ -258,7 +264,7 @@ program
       },
       async (args) => {
         const artifact = await request("/artifacts", "POST", args);
-        return { ...artifact, url: `${base}/a/${artifact.id}` };
+        return { ...artifact, url: `${browserBase}/a/${artifact.id}` };
       },
     );
     tool(
@@ -274,7 +280,7 @@ program
       },
       async ({ id, ...args }) => ({
         ...(await request(`/artifacts/${segment(id)}/revisions`, "POST", args)),
-        url: `${base}/a/${id}`,
+        url: `${browserBase}/a/${id}`,
       }),
     );
     tool(
@@ -288,7 +294,7 @@ program
       },
       async ({ id, ...args }) => ({
         ...(await request(`/artifacts/${segment(id)}/restore`, "POST", args)),
-        url: `${base}/a/${id}`,
+        url: `${browserBase}/a/${id}`,
       }),
     );
     tool(
@@ -305,7 +311,7 @@ program
           "POST",
           args,
         );
-        return { ...artifact, url: `${base}/a/${artifact.id}` };
+        return { ...artifact, url: `${browserBase}/a/${artifact.id}` };
       },
     );
     tool(
