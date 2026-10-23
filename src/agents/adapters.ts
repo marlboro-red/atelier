@@ -4,13 +4,14 @@ import { AgentRpc } from "./rpc.js";
 export interface Adapter {
   sessionId: string;
   closed?: Promise<Error>;
-  send(prompt: string): Promise<void>;
+  send(prompt: string, signal?: AbortSignal): Promise<void>;
   close(): void;
 }
 export type Approval = (description: string) => Promise<boolean>;
 export type AgentOptions = {
   provider: "codex" | "copilot";
-  artifact: string;
+  artifact?: string;
+  creator?: { config: string };
   cwd: string;
   base: string;
   session?: string;
@@ -31,9 +32,21 @@ export async function createAdapter(
   const { provider, cwd, artifact, base, approve, log } = options;
   const mcp = {
     command: process.execPath,
-    args: [entry, "mcp", "--artifact", artifact],
+    args: [
+      entry,
+      "mcp",
+      ...(options.creator
+        ? ["--creator-bridge", options.creator.config]
+        : ["--artifact", artifact!]),
+    ],
     env: { ATELIER_URL: base },
   };
+  const sessionInstructions = options.creator
+    ? instructions.replace(
+        "Handle feedback only for the connected atelier artifact.",
+        "Create artifacts requested by the user through atelier MCP. Every artifact you create is automatically connected to this same session for feedback. Handle feedback only for artifacts created here.",
+      )
+    : instructions;
   const rpc = createRpc(
     provider,
     provider === "codex"
@@ -109,7 +122,9 @@ export async function createAdapter(
             "session/prompt",
             {
               sessionId,
-              prompt: [{ type: "text", text: instructions + "\n\n" + prompt }],
+              prompt: [
+                { type: "text", text: sessionInstructions + "\n\n" + prompt },
+              ],
             },
             15 * 60_000,
           );
@@ -136,7 +151,9 @@ export async function createAdapter(
         const scopedCall =
           params.serverName === "atelier" &&
           params._meta?.codex_approval_kind === "mcp_tool_call" &&
-          params._meta?.tool_params?.id === artifact;
+          (options.creator
+            ? true // The creator MCP enforces ownership and working-directory scope.
+            : params._meta?.tool_params?.id === artifact);
         if (
           params.mode !== "form" ||
           Object.keys(params.requestedSchema?.properties ?? {}).length
@@ -166,7 +183,7 @@ export async function createAdapter(
         approvalPolicy: "untrusted",
         sandbox: "read-only",
         config: { "mcp_servers.atelier": mcp },
-        developerInstructions: instructions,
+        developerInstructions: sessionInstructions,
       },
       60_000,
     );

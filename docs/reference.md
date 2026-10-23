@@ -138,9 +138,9 @@ Pele has its own layout and visual style. Existing `mermaid` imports still use M
 
 ## Comments
 
-Highlighting text offers a nearby Comment button that opens a compact composer without opening the sidebar or resizing the artifact. The header also provides element selection and a Comments button with an unresolved count. Unresolved comments appear as highlights and numbered markers; clicking either opens the thread. Annotations do not appear in HTML or PDF exports.
+Highlighting text offers a nearby Comment button that opens a compact composer without opening the sidebar or resizing the artifact. The header provides element and section selection, with a blue outline before selection, and a Comments button with an unresolved count. Unresolved comments appear as highlights and numbered markers; clicking either opens the thread. Annotations do not appear in HTML or PDF exports.
 
-A comment belongs to an artifact and a revision. Its optional anchor contains the selected quote, surrounding text, DOM selector, and element tag.
+A comment belongs to an artifact and a revision. Its optional anchor contains the selected quote, surrounding text, DOM selector, and element tag. New anchors also include `kind` (`text`, `element`, or `section`). Element and section anchors have an empty quote and a descriptive `label`; their annotations cover the whole element. Older anchors remain valid.
 
 The browser locates a selection by its selector and quote. If the selector no longer matches, a unique quote can identify the element. Removed or ambiguous selections remain accessible through the original revision. Stable element IDs and `data-atelier-id` attributes improve matching.
 
@@ -153,7 +153,7 @@ Comment status has four values:
 | `addressed` | Ready for review | An agent has submitted a revision linked to the comment, or set this status |
 | `resolved` | Resolved | The thread is closed |
 
-Agents read comments through MCP, the CLI, or the API. An explicit `atelier watch` command enables automatic delivery through Claude Code Channels, the Codex app server, or Copilot CLI ACP. See [automatic comment delivery](agent-feedback.md). A revision's `commentIds` marks linked, unresolved comments as `addressed`.
+Agents read comments through MCP, the CLI, or the API. `atelier agent` automatically connects artifacts created through its MCP connection to the creating session. `atelier watch` connects an existing artifact. Both deliver feedback through Claude Code Channels, the Codex app server, or Copilot CLI ACP. See [automatic comment delivery](agent-feedback.md). A revision's `commentIds` marks linked, unresolved comments as `addressed`.
 
 ## Artifact state
 
@@ -223,6 +223,8 @@ The stdio server exposes these tools:
 | `reply_to_comment` | Adds a reply or changes comment status |
 
 Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution. Tool annotations distinguish reads from writes. Failed tool calls return `isError` and an explanation. CLI and MCP requests reject redirects and non-loopback service addresses. A request timeout tells the agent to read the saved state before retrying a publication.
+
+Creation and duplication results also include `feedback.connected`. A connected result has `target: "creating_session"`; a disconnected result includes `reason`. MCP `create_artifact` defaults `watch` to `true`. A plain MCP connection reports disconnected because it cannot start a turn in its client. A failed feedback connection does not undo the publication.
 
 ### Library previews
 
@@ -386,4 +388,4 @@ All paths below are relative to `/api/artifacts/:id/feedback`. `notifyAgent` def
 
 A connection token fences queue operations, not every native agent tool. A disconnected or expired token cannot acknowledge a later connection's events. Delivery acknowledgements do not mark comments resolved.
 
-`atelier watch ID --agent claude|codex|copilot --cwd PATH [--session ID]` runs in the foreground. `atelier mcp --artifact ID` scopes the MCP tools to one artifact and file inputs to its working directory. `--claude-channel` additionally advertises Claude's channel capability and waits for comment reads as delivery receipts. Ordinary `atelier mcp` behavior is unchanged.
+`atelier agent "REQUEST" --agent claude|codex|copilot --cwd PATH` creates through one foreground session and automatically connects its new artifacts. Codex and Copilot require the request; Claude can open an interactive session without one. `atelier watch ID --agent claude|codex|copilot --cwd PATH [--session ID]` connects an existing artifact. `atelier mcp --artifact ID` scopes the MCP tools to one artifact and file inputs to its working directory. `atelier mcp --claude-channel` advertises Claude's channel capability and waits for comment reads as delivery receipts. With no artifact scope, it automatically watches new artifacts created through that connection. `--no-watch` disables automatic connection on creation. Claude still requires its native development-channel opt-in. Managed Codex and Copilot sessions use a private authenticated IPC connection to register their created artifact IDs.

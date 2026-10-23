@@ -115,19 +115,19 @@ The agent returns a URL such as `http://atelier.localhost:4310/a/<id>`. Open tha
 
 1. Highlight text in an artifact and click **Comment** beside the selection.
 2. Enter the change you want in the popup and send the comment.
-3. Ask your agent to read the artifact's comments and apply the changes.
+3. If an agent is connected, it picks up the comment automatically. Otherwise, ask your agent to read the comments.
 
-For a chart, diagram, or other visual element, click **Comment on an element** in the header, then click the element. The header's **Comments** button shows the number of unresolved threads. Click highlighted text or a numbered marker to open its thread.
+For a chart, diagram, or other visual element, click **Comment on an element** in the header, then click the element. Choose **Section** to target a whole section. A blue outline shows the target before you click. The header's **Comments** button shows the number of unresolved threads. Click highlighted text or a numbered marker to open its thread.
 
-To handle feedback automatically, start a connection in a second terminal:
+To create an artifact and keep its creating agent connected, run:
 
 ```sh
-atelier watch ARTIFACT_ID --agent codex --cwd .
+atelier agent "Create a report with a chart and diagram" --agent codex --cwd .
 ```
 
-Use `--agent copilot` for GitHub Copilot CLI or `--agent claude` for Claude Code. Claude opens an interactive session and asks you to enable the local development channel. In the viewer, **Comments → Connect an agent** copies the command for your artifact.
+Use `--agent copilot` for GitHub Copilot CLI or `--agent claude` for Claude Code. Every artifact created through that session's MCP connection receives feedback in the same session by default. Keep the terminal open. Claude asks you to enable its local development channel.
 
-Keep the terminal open. Without a connection, comments wait for an agent to read them manually. See [automatic comment delivery](docs/agent-feedback.md) for session resume, permissions, and interrupted deliveries.
+Ordinary MCP connections cannot wake Codex or Copilot conversations. For an existing artifact, use **Comments → Connect an agent** or run `atelier watch ARTIFACT_ID --agent codex --cwd .`. See [automatic comment delivery](docs/agent-feedback.md) for setup, session resume, and interrupted deliveries.
 
 The agent saves a new revision under the same artifact ID. The thread links to the revision that addressed it. Click **History** in the header to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 

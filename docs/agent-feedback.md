@@ -1,10 +1,24 @@
 # Handle comments automatically
 
-Connect one artifact to an agent to have new comments picked up automatically. The connection runs locally and uses the agent's existing login. Keep atelier and the agent terminal open.
+Start an agent through atelier to create artifacts and handle their comments in the same session. Keep atelier and the agent terminal open.
 
-## Start a connection
+## Create with automatic feedback
 
-Install and sign in to the CLI you want to use. Then run one of these commands from the directory the agent should work in:
+Install and sign in to the CLI you want to use. From the directory the agent should work in, run one of these commands:
+
+```sh
+atelier agent "Create a report with a chart" --agent codex --cwd .
+atelier agent "Create a report with a chart" --agent copilot --cwd .
+atelier agent "Create a report with a chart" --agent claude --cwd .
+```
+
+Replace the quoted request with your task. Codex and Copilot print their session ID, create the artifact, and stay open for comments. Claude opens its interactive CLI. New artifacts and duplicates created through the session's MCP connection join that same session automatically. Multiple artifacts share one session, with feedback handled one turn at a time.
+
+Open the returned artifact URL and leave a comment. **Comments** shows the connected agent. The creation tool also reports `feedback.connected`. If the connection fails, the artifact is still saved and the result explains the failure. Set `watch: false` in `create_artifact` to leave an artifact disconnected.
+
+Ordinary MCP connections cannot wake arbitrary Codex or Copilot conversations. atelier does not discover live sessions, resume them behind your back, or start a second agent after creation. Use `atelier agent` when you want automatic feedback from the start. No command changes your global MCP configuration.
+
+## Connect an existing artifact
 
 ```sh
 atelier watch ARTIFACT_ID --agent codex --cwd .
@@ -12,9 +26,7 @@ atelier watch ARTIFACT_ID --agent copilot --cwd .
 atelier watch ARTIFACT_ID --agent claude --cwd .
 ```
 
-Replace `ARTIFACT_ID` with the ID at the end of the artifact's URL. In the viewer, **Comments → Connect an agent** can copy the command with the ID filled in.
-
-Codex and Copilot start a managed session and print its ID. Claude opens its interactive CLI with atelier configured as a channel. None of these commands changes your global MCP configuration.
+Replace `ARTIFACT_ID` with the ID at the end of the artifact's URL. In the viewer, **Comments → Connect an agent** copies the command with the ID filled in.
 
 ### Claude Code
 
@@ -41,7 +53,7 @@ See the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-serv
 
 ## Leave feedback
 
-Highlight text and click **Comment**, or use **Comment on an element** in the header. Write your request in the small popup and send it. The document stays at full width.
+Highlight text and click **Comment**, or use **Comment on an element** in the header. Choose **Element** for a chart, image, or control. Choose **Section** for a whole section. The blue outline shows the target. Write your request in the small popup and send it. The document stays at full width.
 
 New viewer comments, replies, and reopened threads enter the durable queue. Feedback saved while disconnected waits for the next connection. Agent replies and revisions do not trigger another turn. Comments created through MCP do not enqueue work; API callers must explicitly set `notifyAgent: true` when submitting user feedback.
 
@@ -51,13 +63,13 @@ The agent reads the source and thread, replies, and publishes revisions under th
 
 Open **Comments** to see the connection, queued feedback, and permission requests. For Codex and Copilot, approve unrelated tool actions in the terminal when prompted. Without an interactive terminal, those requests are denied.
 
-Press **Ctrl+C** to stop a managed watcher, or click **Disconnect** to stop further delivery. Watchers check the connection every five seconds. A Claude turn already running may continue after delivery is disconnected; stop that turn in Claude if needed.
+Press **Ctrl+C** to stop a managed watcher, or click **Disconnect** to stop further delivery. Watchers check the connection every five seconds. A turn already running in a shared creator session may continue after that artifact is disconnected. Stop the agent terminal if you need to end the turn. Other artifacts in the session stay connected.
 
 If delivery is interrupted, check the comment and latest revision before using **Retry uncertain deliveries**. The agent may have already applied the change. atelier does not automatically replay an ambiguous attempt. Queued feedback that has not been dispatched is preserved across restarts.
 
 ## Permission boundaries
 
-Starting a watcher authorizes the scoped atelier tools for that artifact. The MCP connection rejects other artifact IDs, creation, and duplication. File inputs must resolve inside the chosen working directory, including through symlinks. This scope does not restrict every tool offered by the agent itself.
+Starting `atelier watch` authorizes the scoped atelier tools for that artifact. That MCP connection rejects other artifact IDs, creation, and duplication. Managed Codex and Copilot creator sessions allow creation, then restrict reads and revisions to artifacts created in that session. Claude creator channels retain the normal MCP tools and automatically connect only artifacts created through that connection. File inputs must resolve inside the chosen working directory, including through symlinks. This scope does not restrict every tool offered by the agent itself.
 
 Managed Codex sessions use a read-only filesystem sandbox and request approval for untrusted commands. Copilot retains its CLI sandbox settings and receives approval for the scoped atelier MCP server only. Other permission requests are handled individually. atelier never passes an allow-all-tools or sandbox-bypass flag.
 

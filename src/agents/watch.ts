@@ -76,6 +76,8 @@ export async function watchFeedback(options: {
   state: () => string;
   log: (text: string) => void;
   interval?: number;
+  onConnected?: () => void;
+  dispatch?: (prompt: string, beforeSend: () => Promise<void>) => Promise<void>;
 }) {
   const { id, provider, adapter, request, signal, state, log } = options;
   const path = `/artifacts/${encodeURIComponent(id)}/feedback`;
@@ -101,6 +103,7 @@ export async function watchFeedback(options: {
       provider,
       session: adapter.sessionId,
     }));
+    options.onConnected?.();
     log(
       `Connected ${provider} session ${adapter.sessionId}. New feedback is delivered automatically. Ctrl+C disconnects.\n`,
     );
@@ -141,11 +144,19 @@ export async function watchFeedback(options: {
       }
       try {
         busy = true;
-        await request(path + "/heartbeat", "POST", {
-          token,
-          state: provider === "claude" ? "awaiting_agent" : "working",
-        });
-        await adapter.send(feedbackPrompt(id, events));
+        const beforeSend = async () => {
+          control.signal.throwIfAborted();
+          await request(path + "/heartbeat", "POST", {
+            token,
+            state: provider === "claude" ? "awaiting_agent" : "working",
+          });
+        };
+        const prompt = feedbackPrompt(id, events);
+        if (options.dispatch) await options.dispatch(prompt, beforeSend);
+        else {
+          await beforeSend();
+          await adapter.send(prompt);
+        }
         await request(path + "/finish", "POST", {
           token,
           ids: events.map((e) => e.id),
