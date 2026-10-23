@@ -242,6 +242,27 @@ export function createApp(
   app.get("/api/artifacts/:id/comments", async (req) =>
     store.comments(params(req).id),
   );
+  // A viewer read is passive; only an agent's explicit read records receipt.
+  app.post("/api/artifacts/:id/comments/read", async (req) => {
+    const id = params(req).id;
+    z.object({})
+      .strict()
+      .parse(req.body ?? {});
+    let updated = false;
+    const comments = store.transaction(() => {
+      const comments = store.comments(id);
+      for (const comment of comments) {
+        if (!comment.acknowledgedAt && comment.status !== "resolved") {
+          comment.acknowledgedAt = new Date().toISOString();
+          store.saveComment(comment);
+          updated = true;
+        }
+      }
+      return comments;
+    });
+    if (updated) changed(id);
+    return comments;
+  });
   app.post("/api/artifacts/:id/comments", async (req, reply) => {
     const id = params(req).id;
     const input = commentSchema
@@ -272,6 +293,7 @@ export function createApp(
     const reopened = input.status === "open" && c.status !== "open";
     if (input.status) c.status = input.status;
     if (input.notifyAgent && input.reply) c.status = "open";
+    if (input.notifyAgent && (input.reply || reopened)) delete c.acknowledgedAt;
     if (input.reply)
       c.replies.push({
         body: input.reply,

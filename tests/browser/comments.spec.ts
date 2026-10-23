@@ -56,9 +56,27 @@ test("text selection, annotations, replies, resolution and exports form one revi
   await expect(page.locator('.comment[data-active="true"]')).toContainText(
     "Explain the timing.",
   );
+  const thread = page.getByRole("dialog", { name: "Comments", exact: true });
+  await expect(thread).toBeVisible();
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await expect(page.locator("iframe")).toHaveCSS("width", "1440px");
+  await expect(
+    thread.getByText("Not yet acknowledged", { exact: true }),
+  ).toBeVisible();
+  await request.get(`/api/artifacts/${artifact.id}/comments`);
+  await expect(
+    thread.getByText("Not yet acknowledged", { exact: true }),
+  ).toBeVisible();
+  await request.post(`/api/artifacts/${artifact.id}/comments/read`, {
+    data: {},
+  });
+  await expect(thread.getByText("Acknowledged", { exact: true })).toBeVisible();
   await page.getByLabel("Reply to comment").fill("Keep it brief.");
   await page.getByRole("button", { name: "Send reply" }).click();
   await expect(page.locator(".reply")).toContainText("Keep it brief.");
+  await expect(
+    thread.getByText("Not yet acknowledged", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Resolve comment" }).click();
   await expect(
     frame.getByRole("button", { name: "Open comment 1" }),
@@ -83,9 +101,11 @@ test("text selection, annotations, replies, resolution and exports form one revi
   await expect(frame.getByRole("button", { name: "Changed" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Comments (1)", exact: true }).click();
-  const panel = await page.locator(".review-panel").boundingBox();
+  const panel = await page
+    .getByRole("dialog", { name: "Comments", exact: true })
+    .boundingBox();
   expect(panel!.x).toBeGreaterThanOrEqual(0);
-  expect(panel!.y).toBe(44);
+  expect(panel!.y).toBe(52);
   await page.getByRole("button", { name: "Share", exact: true }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Save as HTML" }).click();
@@ -196,7 +216,12 @@ test("mobile comments use a compact popup and show connection state in the threa
     (await (await request.get(`/api/artifacts/${a.id}/feedback`)).json())
       .queued,
   ).toBe(1);
-  await page.getByRole("button", { name: "Comments (1)" }).click();
+  if (
+    !(await page
+      .getByRole("dialog", { name: "Comments", exact: true })
+      .isVisible())
+  )
+    await page.getByRole("button", { name: "Comments (1)" }).click();
   await page.route("**/api/agents/codex/sessions", (route) =>
     route.fulfill({
       json: [

@@ -937,9 +937,10 @@ program
     );
     tool(
       "list_comments",
-      "Read feedback, selections, revision references, replies, and statuses.",
+      "Read feedback and record that the agent has acknowledged the current comments and replies.",
       { id: z.string() },
-      ({ id }) => request(`/artifacts/${segment(id)}/comments`),
+      ({ id }) =>
+        request(`/artifacts/${segment(id)}/comments/read`, "POST", {}),
     );
     tool(
       "add_comment",

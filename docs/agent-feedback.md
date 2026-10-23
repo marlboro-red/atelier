@@ -74,11 +74,13 @@ See the [Copilot CLI ACP reference](https://docs.github.com/en/copilot/reference
 
 ## Leave feedback
 
-Highlight text and click **Comment**, or use **Comment on an element** in the header. Choose **Element** for a chart, image, or control. Choose **Section** for a whole section. The blue outline shows the target. Write your request in the small popup and send it. The document stays at full width.
+Highlight text and click **Comment**, or use **Comment on an element** in the header. Choose **Element** for a chart, image, or control. Choose **Section** for a whole section. The blue outline shows the target. Write your request in the small popup and send it. The document stays at full width. After sending, the popup shows the thread, replies, and its status. Click a comment marker to reopen that thread, or **Comments** in the header to browse all threads in a popup.
 
 New viewer comments, replies, and reopened threads enter the durable queue. Feedback saved while disconnected waits for the next connection. Agent replies and revisions do not trigger another turn. Comments created through MCP do not enqueue work; API callers must explicitly set `notifyAgent: true` when submitting user feedback.
 
-The agent reads the source and thread, replies, and publishes revisions under the same artifact ID. Check the result and resolve the thread yourself. A completed delivery means the agent received the work, not that the requested change succeeded.
+The agent reads the source and thread, replies, and publishes revisions under the same artifact ID. Check the result and resolve the thread yourself. **Acknowledged** appears when the agent reads the thread through `list_comments`. Queue delivery alone does not mark a comment acknowledged. A new user reply or reopened thread clears the acknowledgement until the agent reads it again. **Ready for review** means the agent linked the comment to a revision.
+
+After updating atelier, restart your agent’s atelier MCP connection to load the acknowledgement behavior. Older MCP processes can still read comments, but those reads do not record acknowledgement.
 
 ## Check or stop delivery
 

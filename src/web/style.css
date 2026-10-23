@@ -1377,3 +1377,29 @@ button svg {
   color: white;
   border-radius: 4px;
 }
+
+.comment-threads {
+  max-height: min(560px, calc(100dvh - 64px));
+}
+.comment-threads h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.comment-threads .comments-list {
+  padding: 0;
+  margin-top: 12px;
+}
+.comment-threads .comment {
+  margin-bottom: 8px;
+}
+.comment-threads .comment-intro {
+  margin-top: 12px;
+}
+.comment-threads .all-comments {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.comment-threads .acknowledged {
+  color: #466638;
+  font-size: 10px;
+}

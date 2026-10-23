@@ -468,7 +468,7 @@ function bridge(config: {
       pin.style.top = y + "px";
       pin.addEventListener("click", (e) => {
         e.stopPropagation();
-        emit("open-comment", { id: comment.id });
+        emit("open-comment", { id: comment.id, x: e.clientX, y: e.clientY });
       });
       overlayRoot!.append(pin);
     });
@@ -685,7 +685,11 @@ function bridge(config: {
                   event.clientY <= r.bottom,
               )
             ) {
-              emit("open-comment", { id: comment.id });
+              emit("open-comment", {
+                id: comment.id,
+                x: event.clientX,
+                y: event.clientY,
+              });
               return;
             }
           }

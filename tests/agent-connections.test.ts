@@ -196,6 +196,51 @@ test("MCP creation accepts the agent's own identity and connect reads it from th
     const created = JSON.parse(result.content[0].text);
     assert.equal(created.feedback.connected, true);
     assert.deepEqual(f.calls, [session]);
+    const comment = f.store.addComment(created.id, {
+      revision: 1,
+      body: "Please amend",
+      author: "You",
+      anchor: null,
+    });
+    const commentsPath = `/api/artifacts/${created.id}/comments`;
+    const unread = await f.app.inject({ method: "GET", url: commentsPath });
+    assert.equal(unread.json()[0].acknowledgedAt, undefined);
+    const denied = await f.app.inject({
+      method: "POST",
+      url: commentsPath + "/read",
+      payload: {},
+      headers: { origin: "null" },
+    });
+    assert.equal(denied.statusCode, 403);
+    const read: any = await client.callTool({
+      name: "list_comments",
+      arguments: { id: created.id },
+    });
+    assert.ok(!read.isError);
+    const acknowledgedAt = JSON.parse(read.content[0].text)[0].acknowledgedAt;
+    assert.ok(acknowledgedAt);
+    await client.callTool({
+      name: "list_comments",
+      arguments: { id: created.id },
+    });
+    assert.equal(
+      f.store.comment(created.id, comment.id).acknowledgedAt,
+      acknowledgedAt,
+    );
+    await f.app.inject({
+      method: "PATCH",
+      url: commentsPath + "/" + comment.id,
+      payload: { reply: "One more thing", notifyAgent: true },
+    });
+    assert.equal(
+      f.store.comment(created.id, comment.id).acknowledgedAt,
+      undefined,
+    );
+    await client.callTool({
+      name: "list_comments",
+      arguments: { id: created.id },
+    });
+    assert.ok(f.store.comment(created.id, comment.id).acknowledgedAt);
     const a = f.create();
     const resultCLI = await promisify(execFile)(
       process.execPath,

@@ -56,6 +56,10 @@ function App() {
     x: number;
     y: number;
   } | null>(null);
+  const [threadPosition, setThreadPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [feedback, setFeedback] = useState<{
     provider: string | null;
     connected: boolean;
@@ -259,6 +263,7 @@ function App() {
     setReviewOpen(false);
     setPanel(next);
     setComposerPosition(null);
+    setThreadPosition(null);
     setSelecting(false);
     if (next !== "source") setCompare(null);
   }
@@ -408,6 +413,8 @@ function App() {
       ) {
         setActiveComment(msg.id);
         openPanel("comments");
+        if (Number.isFinite(msg.x) && Number.isFinite(msg.y))
+          setThreadPosition(popupPosition(msg.x, msg.y + 44));
       }
       if (msg.type === "runtime-error" && typeof msg.message === "string")
         setRuntimeErrors((old) =>
@@ -518,7 +525,9 @@ function App() {
       );
       setBody("");
       setAnchor(null);
+      setThreadPosition(composerPosition);
       setComposerPosition(null);
+      setPanel("comments");
       setActiveComment(created.id);
       await refresh();
       notify(
@@ -605,7 +614,8 @@ function App() {
     <div
       className={
         showingArtifact
-          ? "artifact-page" + (panel ? " panel-open" : "")
+          ? "artifact-page" +
+            (panel && panel !== "comments" ? " panel-open" : "")
           : "library-page"
       }
     >
@@ -683,9 +693,10 @@ function App() {
                     aria-label={`Comments (${comments.filter((c) => c.status !== "resolved").length})`}
                     aria-expanded={panel === "comments"}
                     className={panel === "comments" ? "selected" : ""}
-                    onClick={() =>
+                    onClick={() => (
+                      setActiveComment(null),
                       openPanel(panel === "comments" ? null : "comments")
-                    }
+                    )}
                   >
                     <MessageSquare size={16} />
                     <span>Comments</span>
@@ -822,9 +833,29 @@ function App() {
                 </section>
               )}
               {panel && (
-                <aside
+                <div
+                  role={panel === "comments" ? "dialog" : "complementary"}
                   className={
-                    "review-panel " + (panel === "source" ? "source-panel" : "")
+                    panel === "comments"
+                      ? "comment-popover comment-threads"
+                      : "review-panel " +
+                        (panel === "source" ? "source-panel" : "")
+                  }
+                  style={
+                    panel === "comments"
+                      ? {
+                          left: threadPosition
+                            ? `clamp(8px, ${threadPosition.x}px, max(8px, calc(100vw - 348px)))`
+                            : undefined,
+                          right: threadPosition ? undefined : 12,
+                          maxHeight: threadPosition
+                            ? `min(560px, calc(100dvh - clamp(52px, ${threadPosition.y}px, max(52px, calc(100dvh - 400px))) - 8px))`
+                            : undefined,
+                          top: threadPosition
+                            ? `clamp(52px, ${threadPosition.y}px, max(52px, calc(100dvh - 400px)))`
+                            : 52,
+                        }
+                      : undefined
                   }
                   aria-label={
                     {
@@ -1054,12 +1085,22 @@ function App() {
                           )}
                         </details>
                       )}
-                      <div className="comment-intro">
-                        <p>Highlight text on the page to comment.</p>
-                        <button onClick={startSelection}>
-                          <MousePointer2 size={14} /> Select an element
+                      {activeComment && (
+                        <button
+                          className="all-comments"
+                          onClick={() => setActiveComment(null)}
+                        >
+                          ← All comments
                         </button>
-                      </div>
+                      )}
+                      {!activeComment && (
+                        <div className="comment-intro">
+                          <p>Highlight text on the page to comment.</p>
+                          <button onClick={startSelection}>
+                            <MousePointer2 size={14} /> Select an element
+                          </button>
+                        </div>
+                      )}
                       <div className="comments-list">
                         {!comments.length && (
                           <div className="empty-comments">
@@ -1073,152 +1114,168 @@ function App() {
                             </button>
                           </div>
                         )}
-                        {comments.map((c) => (
-                          <div
-                            className={
-                              "comment " +
-                              (c.status === "resolved" ? "resolved" : "")
-                            }
-                            key={c.id}
-                            id={"comment-" + c.id}
-                            data-active={activeComment === c.id}
-                          >
-                            <div className="comment-meta">
-                              <span className="avatar">
-                                {c.author.charAt(0)}
-                              </span>
-                              <strong>{c.author}</strong>
-                              <button
-                                onClick={() =>
-                                  navigate(artifact.id, c.revision)
-                                }
-                              >
-                                v{c.revision}
-                              </button>
-                            </div>
-                            {c.anchor && (
-                              <button
-                                className="quote"
-                                onClick={() => {
-                                  setActiveComment(c.id);
-                                  iframe.current?.contentWindow?.postMessage(
-                                    {
-                                      atelier: true,
-                                      type: "locate",
-                                      anchor: c.anchor,
-                                    },
-                                    "*",
-                                  );
-                                }}
-                              >
-                                {c.anchor.label ||
-                                  c.anchor.quote ||
-                                  `<${c.anchor.tag}>`}
-                              </button>
-                            )}
-                            <p>{c.body}</p>
-                            {history
-                              .filter((r) => r.commentIds.includes(c.id))
-                              .map((r) => (
+                        {comments
+                          .filter(
+                            (c) => !activeComment || c.id === activeComment,
+                          )
+                          .map((c) => (
+                            <div
+                              className={
+                                "comment " +
+                                (c.status === "resolved" ? "resolved" : "")
+                              }
+                              key={c.id}
+                              id={"comment-" + c.id}
+                              data-active={activeComment === c.id}
+                            >
+                              <div className="comment-meta">
+                                <span className="avatar">
+                                  {c.author.charAt(0)}
+                                </span>
+                                <strong>{c.author}</strong>
                                 <button
-                                  className="comment-revision"
-                                  key={r.number}
                                   onClick={() =>
-                                    navigate(artifact.id, r.number)
+                                    navigate(artifact.id, c.revision)
                                   }
                                 >
-                                  Updated in revision {r.number}{" "}
-                                  <ArrowUpRight size={12} />
+                                  v{c.revision}
                                 </button>
-                              ))}
-                            {c.replies.map((r, i) => (
-                              <div className="reply" key={i}>
-                                <strong>{r.author}</strong>
-                                <p>{r.body}</p>
                               </div>
-                            ))}
-                            <div className="comment-status">
-                              <span className={"status " + c.status}>
-                                {
+                              {c.anchor && (
+                                <button
+                                  className="quote"
+                                  onClick={() => {
+                                    setActiveComment(c.id);
+                                    iframe.current?.contentWindow?.postMessage(
+                                      {
+                                        atelier: true,
+                                        type: "locate",
+                                        anchor: c.anchor,
+                                      },
+                                      "*",
+                                    );
+                                  }}
+                                >
+                                  {c.anchor.label ||
+                                    c.anchor.quote ||
+                                    `<${c.anchor.tag}>`}
+                                </button>
+                              )}
+                              <p>{c.body}</p>
+                              {history
+                                .filter((r) => r.commentIds.includes(c.id))
+                                .map((r) => (
+                                  <button
+                                    className="comment-revision"
+                                    key={r.number}
+                                    onClick={() =>
+                                      navigate(artifact.id, r.number)
+                                    }
+                                  >
+                                    Updated in revision {r.number}{" "}
+                                    <ArrowUpRight size={12} />
+                                  </button>
+                                ))}
+                              {c.replies.map((r, i) => (
+                                <div className="reply" key={i}>
+                                  <strong>{r.author}</strong>
+                                  <p>{r.body}</p>
+                                </div>
+                              ))}
+                              <div className="comment-status" role="status">
+                                {c.acknowledgedAt && c.status !== "open" && (
+                                  <span
+                                    className="acknowledged"
+                                    title={new Date(
+                                      c.acknowledgedAt,
+                                    ).toLocaleString()}
+                                  >
+                                    Acknowledged
+                                  </span>
+                                )}
+                                <span className={"status " + c.status}>
                                   {
-                                    open: "Queued for agent",
-                                    in_progress: "Being addressed",
-                                    addressed: "Ready for review",
-                                    resolved: "Resolved",
-                                  }[c.status]
-                                }
-                              </span>
-                              <button
-                                title={
-                                  c.status === "resolved"
-                                    ? "Reopen comment"
-                                    : "Resolve comment"
-                                }
-                                onClick={() =>
+                                    {
+                                      open: c.acknowledgedAt
+                                        ? "Acknowledged"
+                                        : "Not yet acknowledged",
+                                      in_progress: "Being addressed",
+                                      addressed: "Ready for review",
+                                      resolved: "Resolved",
+                                    }[c.status]
+                                  }
+                                </span>
+                                <button
+                                  title={
+                                    c.status === "resolved"
+                                      ? "Reopen comment"
+                                      : "Resolve comment"
+                                  }
+                                  onClick={() =>
+                                    run(async () => {
+                                      await api(
+                                        `/artifacts/${artifact.id}/comments/${c.id}`,
+                                        {
+                                          method: "PATCH",
+                                          body: JSON.stringify({
+                                            notifyAgent: true,
+                                            status:
+                                              c.status === "resolved"
+                                                ? "open"
+                                                : "resolved",
+                                          }),
+                                        },
+                                      );
+                                      await refresh();
+                                    })
+                                  }
+                                >
+                                  {c.status === "resolved" ? (
+                                    <RotateCcw size={13} />
+                                  ) : (
+                                    <Check size={14} />
+                                  )}
+                                </button>
+                              </div>
+                              <form
+                                className="reply-form"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const form = e.currentTarget;
+                                  const input = form.elements.namedItem(
+                                    "reply",
+                                  ) as HTMLInputElement;
                                   run(async () => {
                                     await api(
                                       `/artifacts/${artifact.id}/comments/${c.id}`,
                                       {
                                         method: "PATCH",
                                         body: JSON.stringify({
+                                          reply: input.value,
+                                          author: "You",
                                           notifyAgent: true,
-                                          status:
-                                            c.status === "resolved"
-                                              ? "open"
-                                              : "resolved",
                                         }),
                                       },
                                     );
+                                    form.reset();
                                     await refresh();
-                                  })
-                                }
+                                  });
+                                }}
                               >
-                                {c.status === "resolved" ? (
-                                  <RotateCcw size={13} />
-                                ) : (
-                                  <Check size={14} />
-                                )}
-                              </button>
+                                <input
+                                  name="reply"
+                                  aria-label="Reply to comment"
+                                  placeholder="Reply…"
+                                  required
+                                />
+                                <button aria-label="Send reply">
+                                  <ArrowUpRight size={14} />
+                                </button>
+                              </form>
                             </div>
-                            <form
-                              className="reply-form"
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                const form = e.currentTarget;
-                                const input = form.elements.namedItem(
-                                  "reply",
-                                ) as HTMLInputElement;
-                                run(async () => {
-                                  await api(
-                                    `/artifacts/${artifact.id}/comments/${c.id}`,
-                                    {
-                                      method: "PATCH",
-                                      body: JSON.stringify({
-                                        reply: input.value,
-                                        author: "You",
-                                        notifyAgent: true,
-                                      }),
-                                    },
-                                  );
-                                  form.reset();
-                                  await refresh();
-                                });
-                              }}
-                            >
-                              <input
-                                name="reply"
-                                aria-label="Reply to comment"
-                                placeholder="Reply…"
-                                required
-                              />
-                              <button aria-label="Send reply">
-                                <ArrowUpRight size={14} />
-                              </button>
-                            </form>
-                          </div>
-                        ))}
+                          ))}
                       </div>
-                      {!composerPosition && composer}
+                      {!composerPosition && !activeComment && composer}
                     </>
                   ) : panel === "history" ? (
                     <>
@@ -1371,7 +1428,7 @@ function App() {
                       {busy && <div role="status">Preparing your export…</div>}
                     </div>
                   )}
-                </aside>
+                </div>
               )}
             </>
           )}

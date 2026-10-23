@@ -82,5 +82,6 @@ export interface Comment {
   anchor: Anchor | null;
   status: "open" | "in_progress" | "addressed" | "resolved";
   createdAt: string;
+  acknowledgedAt?: string;
   replies: { body: string; author: string; createdAt: string }[];
 }
