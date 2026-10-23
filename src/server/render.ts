@@ -1,6 +1,7 @@
 import { build } from "esbuild";
 import {
   parse,
+  parseFragment,
   serialize,
   serializeOuter,
   type DefaultTreeAdapterMap,
@@ -37,7 +38,7 @@ const css = readFileSync(
 });
 async function htmlDocument(source: string) {
   type Element = DefaultTreeAdapterMap["element"];
-  const document = parse(source);
+  const document = parse(source, { sourceCodeLocationInfo: true });
   const html = document.childNodes.find(
     (node): node is Element => node.nodeName === "html",
   )!;
@@ -47,6 +48,16 @@ async function htmlDocument(source: string) {
   const body = html.childNodes.find(
     (node): node is Element => node.nodeName === "body",
   )!;
+  const isDocument =
+    document.childNodes.some((node) => node.nodeName === "#documentType") ||
+    [html, head, body].some((node) => node.sourceCodeLocation?.startTag);
+  if (!isDocument) {
+    // A fragment already has a body supplied by Atelier. Do not let the full
+    // document parser promote its leading styles and scripts into the head.
+    head.childNodes = [];
+    body.childNodes = parseFragment(body, source, {}).childNodes;
+    for (const child of body.childNodes) child.parentNode = body;
+  }
   let scriptCount = 0;
   async function embedScripts(
     node: DefaultTreeAdapterMap["node"],

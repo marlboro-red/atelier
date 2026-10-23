@@ -498,3 +498,53 @@ test("verified CDN scripts execute offline but cannot load runtime dependencies"
   expect(network).toEqual([]);
   expect(page.workers()).toHaveLength(0);
 });
+
+for (const prefix of ["", "<style>h1{color:teal}</style>"]) {
+  test(`leading fragment scripts can access the body${prefix ? " after styles" : ""}`, async ({
+    page,
+    request,
+  }) => {
+    const artifact = await create(request, "Body context", {
+      kind: "html",
+      entry: "index.html",
+      files: {
+        "index.html": `${prefix}<script>document.body.dataset.initialized='yes';window.literal='<html><head><body>';</script><h1>Body context</h1>`,
+      },
+    });
+    await page.goto("/a/" + artifact.id);
+    await expect(page.frameLocator("iframe").locator("body")).toHaveAttribute(
+      "data-initialized",
+      "yes",
+    );
+    const exported = await request.post(
+      `/api/artifacts/${artifact.id}/export`,
+      { data: { format: "html", revision: 1 } },
+    );
+    expect(exported.ok()).toBe(true);
+    await page.goto("about:blank");
+    await page.setContent(await exported.text());
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-initialized",
+      "yes",
+    );
+  });
+}
+
+test("explicit full-document head scripts keep their authored execution order", async ({
+  page,
+  request,
+}) => {
+  const artifact = await create(request, "Head context", {
+    kind: "html",
+    entry: "index.html",
+    files: {
+      "index.html":
+        "<!doctype html><html><head><script>window.bodyWasAbsent=document.body===null;</script></head><body><script>document.body.dataset.headOrder=String(window.bodyWasAbsent);</script><h1>Head context</h1></body></html>",
+    },
+  });
+  await page.goto("/a/" + artifact.id);
+  await expect(page.frameLocator("iframe").locator("body")).toHaveAttribute(
+    "data-head-order",
+    "true",
+  );
+});
