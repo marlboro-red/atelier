@@ -12,7 +12,7 @@ const store = new Store(
   process.env.ATELIER_DATA_DIR ?? resolve(homedir(), ".atelier"),
 );
 const app = createApp(store, previewPort);
-const preview = createPreviewApp(store);
+const preview = createPreviewApp(store, port);
 const dist = resolve(root, "dist/web");
 if (!existsSync(dist))
   throw new Error("Build the workspace first with npm run build");

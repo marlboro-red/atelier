@@ -16,6 +16,7 @@ import sanitize from "sanitize-html";
 import katex from "katex";
 import type { Content } from "../shared/schema.js";
 import { loadCdnScript } from "./cdn.js";
+import { artifactPolicy } from "../shared/security.js";
 const require = createRequire(import.meta.url);
 const allowed = new Set([
   "react",
@@ -216,11 +217,22 @@ function bridge(config: {
   let seq = 0;
   const emit = (type: string, payload: any = {}) =>
     parent.postMessage({ atelier: true, type, ...payload }, "*");
+  const exportRequest = (type: string, value?: unknown) => {
+    const requestId = ++seq;
+    return new Promise((resolve, reject) => {
+      pending.set(requestId, { resolve, reject });
+      emit(type, { requestId, data: value });
+    });
+  };
   w.atelier = {
-    getData: async () => data,
+    getData: async () =>
+      config.standalone && parent !== window
+        ? exportRequest("export-get-data")
+        : data,
     setData: async (value: any) => {
       data = value;
       if (config.standalone) {
+        if (parent !== window) return exportRequest("export-set-data", value);
         try {
           localStorage.setItem("atelier:" + config.id, JSON.stringify(value));
         } catch {}
@@ -297,7 +309,7 @@ function bridge(config: {
     if (msg.type === "data-result") {
       const p = pending.get(msg.requestId);
       if (p) {
-        msg.error ? p.reject(new Error(msg.error)) : p.resolve();
+        msg.error ? p.reject(new Error(msg.error)) : p.resolve(msg.data);
         pending.delete(msg.requestId);
       }
     }
@@ -358,6 +370,23 @@ function bridge(config: {
       },
     });
   });
+  // srcdoc inherits the viewer's base URL. Handle local anchors in the
+  // artifact itself instead of navigating the frame to the viewer file.
+  if (config.standalone && parent !== window)
+    addEventListener("click", (event) => {
+      if (event.defaultPrevented || !(event.target instanceof Element)) return;
+      const link = event.target.closest("a[href]");
+      const href = link?.getAttribute("href");
+      if (!href?.startsWith("#")) return;
+      event.preventDefault();
+      try {
+        const target = document.getElementById(
+          decodeURIComponent(href.slice(1)),
+        );
+        if (target) target.scrollIntoView();
+        else if (href === "#") scrollTo(0, 0);
+      } catch {}
+    });
   addEventListener("keydown", (e) => {
     if (e.key === "Escape") emit("escape");
   });
@@ -401,6 +430,50 @@ function bridge(config: {
     emit("ready");
   };
   addEventListener("load", () => setTimeout(restore, 150));
+}
+// Trusted export viewer: keep storage outside the opaque-origin artifact.
+function exportDataBridge(config: { id: string; data: unknown }) {
+  let data = config.data;
+  const key = "atelier:" + config.id;
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved !== null) data = JSON.parse(saved);
+  } catch {}
+  addEventListener("message", (event) => {
+    const frame = document.querySelector("iframe");
+    const msg = event.data;
+    if (
+      !frame ||
+      event.source !== frame.contentWindow ||
+      !msg?.atelier ||
+      !["export-get-data", "export-set-data"].includes(msg.type)
+    )
+      return;
+    let error: string | undefined;
+    if (msg.type === "export-set-data") {
+      try {
+        const json = JSON.stringify(msg.data);
+        if (json === undefined || json.length > 2 * 1024 * 1024)
+          throw new Error("App data must be JSON within the 2 MiB limit");
+        data = JSON.parse(json);
+        try {
+          localStorage.setItem(key, json);
+        } catch {}
+      } catch (e) {
+        error = e instanceof Error ? e.message : "Could not save app data";
+      }
+    }
+    frame.contentWindow!.postMessage(
+      {
+        atelier: true,
+        type: "data-result",
+        requestId: msg.requestId,
+        data,
+        error,
+      },
+      "*",
+    );
+  });
 }
 export async function render(
   content: Content,
@@ -542,7 +615,27 @@ export async function render(
     freeze: options.freeze ?? false,
   };
   const bootstrap = `const __name=(fn)=>fn;(${bridge.toString()})(${escape(JSON.stringify(config))});`;
-  const policy =
-    "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data: https://fonts.googleapis.com; img-src data: blob:; font-src data: https://fonts.gstatic.com; connect-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'";
-  return `<!doctype html>${document.htmlOpen}${document.headOpen}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html{color-scheme:light}body{margin:0;color:#292722;font-family:system-ui,sans-serif}*{box-sizing:border-box}.document{max-width:860px;margin:auto;padding:48px;line-height:1.75}.document h1,.document h2,.document h3{line-height:1.2}.document img,svg{max-width:100%}.document pre{padding:20px;background:#f4f3ef;overflow:auto}.document table{border-collapse:collapse;width:100%}.document td,.document th{padding:10px;border:1px solid #ddd;text-align:left}.document blockquote{border-left:3px solid #c8a780;margin:24px 0;padding-left:20px;color:#666}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{padding:0}pre,figure,tr{break-inside:avoid}}${styles.replace(/<\/style/gi, "<\\/style")}</style><script>${bootstrap.replace(/<\/script/gi, "<\\/script")}</script>${document.head}</head>${document.bodyOpen}${document.body}<script>${script.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+  const rendered = `<!doctype html>${document.htmlOpen}${document.headOpen}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${artifactPolicy}"><style>html{color-scheme:light}body{margin:0;color:#292722;font-family:system-ui,sans-serif}*{box-sizing:border-box}.document{max-width:860px;margin:auto;padding:48px;line-height:1.75}.document h1,.document h2,.document h3{line-height:1.2}.document img,svg{max-width:100%}.document pre{padding:20px;background:#f4f3ef;overflow:auto}.document table{border-collapse:collapse;width:100%}.document td,.document th{padding:10px;border:1px solid #ddd;text-align:left}.document blockquote{border-left:3px solid #c8a780;margin:24px 0;padding-left:20px;color:#666}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{padding:0}pre,figure,tr{break-inside:avoid}}${styles.replace(/<\/style/gi, "<\\/style")}</style><script>${bootstrap.replace(/<\/script/gi, "<\\/script")}</script>${document.head}</head>${document.bodyOpen}${document.body}<script>${script.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+  if (!options.standalone || options.freeze) return rendered;
+  // A downloaded document needs its own trusted parent. srcdoc permits the
+  // initial inline page, while the parent's frame-src blocks later navigation.
+  const attribute = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  function findTitle(
+    node: DefaultTreeAdapterMap["node"],
+  ): DefaultTreeAdapterMap["element"] | undefined {
+    if ("tagName" in node && node.tagName === "title") return node;
+    if ("childNodes" in node)
+      for (const child of node.childNodes) {
+        const title = findTitle(child);
+        if (title) return title;
+      }
+  }
+  const title = findTitle(parse(rendered));
+  const storage = `const __name=(fn)=>fn;(${exportDataBridge.toString()})(${escape(JSON.stringify({ id: options.id, data: options.data ?? null }))});`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${artifactPolicy}"><title>${title ? serialize(title) : "Atelier artifact"}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style><script>${storage.replace(/<\/script/gi, "<\\/script")}</script></head><body><iframe title="Artifact" sandbox="allow-scripts" srcdoc="${attribute(rendered)}"></iframe></body></html>`;
 }

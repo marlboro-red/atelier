@@ -9,6 +9,7 @@ import {
   commentSchema,
 } from "../shared/schema.js";
 import { render } from "./render.js";
+import { workspacePolicy } from "../shared/security.js";
 export function createApp(store: Store, previewPort = 4311) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
   const events = new EventEmitter();
@@ -28,6 +29,7 @@ export function createApp(store: Store, previewPort = 4311) {
       origin !== "http://127.0.0.1:5173"
     )
       throw new HttpError(403, "Cross-origin access denied");
+    reply.header("Content-Security-Policy", workspacePolicy(previewPort));
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
   });
@@ -248,16 +250,21 @@ export function createApp(store: Store, previewPort = 4311) {
   });
   return app;
 }
-export function createPreviewApp(store: Store) {
+export function createPreviewApp(store: Store, workspacePort = 4310) {
   const app = Fastify();
   app.get("/preview/:id/:n", async (req, reply) => {
     const host = req.headers.host?.split(":")[0];
     if (!["localhost", "127.0.0.1", "atelier.localhost"].includes(host ?? ""))
       return reply.code(403).send("Invalid host");
+    if (req.headers["sec-fetch-dest"] !== "iframe")
+      return reply
+        .code(403)
+        .type("text/plain")
+        .send("Open this artifact through the Atelier workspace.");
     const { id, n } = req.params as any;
     reply.header(
       "Content-Security-Policy",
-      "sandbox allow-scripts; frame-ancestors http://atelier.localhost:* http://localhost:* http://127.0.0.1:*",
+      `sandbox allow-scripts; frame-ancestors http://atelier.localhost:${workspacePort} http://localhost:${workspacePort} http://127.0.0.1:${workspacePort} http://127.0.0.1:5173`,
     );
     reply.header("Cache-Control", "no-store");
     try {

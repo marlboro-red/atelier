@@ -192,7 +192,7 @@ Both export formats use a specified source revision and the artifact's saved app
 | PDF | Uses Chromium, print CSS, and A4 pagination to render a static document |
 | Source JSON | Contains the artifact's `content` object |
 
-HTML exports include a copy of app data. They use local browser storage where available and do not write back to Atelier.
+HTML exports include a copy of app data and render inside a sandboxed, full-page viewer without review controls. The viewer handles local browser storage where available; the artifact cannot access the parent page or write back to Atelier. In-page links still work, while navigation to other pages is blocked.
 
 Atelier cannot infer arbitrary component state. Custom filters and slide selection require the export state methods. A presentation PDF captures the current slide. PDF captures canvas frames; HTML retains animation. WebGL capture depends on a readable drawing buffer.
 
@@ -295,6 +295,6 @@ Browser tests use separate ports and `.atelier/test` data. Screenshots and failu
 
 Atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
 
-Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code.
+Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Preview URLs only run when embedded by the workspace. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code.
 
 The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. Atelier is not a security boundary between users of the computer.

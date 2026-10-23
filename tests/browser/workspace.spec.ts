@@ -103,8 +103,13 @@ test("agent-created artifacts fill the page; review and exports preserve interac
   const standalone = await page.context().newPage();
   await standalone.route("**/*", (route) => route.abort());
   await standalone.setContent(html);
-  await expect(standalone.getByLabel("Period")).toHaveValue("3 months");
-  await standalone.getByLabel("Period").selectOption("6 months");
+  await expect(
+    standalone.frameLocator("iframe").getByLabel("Period"),
+  ).toHaveValue("3 months");
+  await standalone
+    .frameLocator("iframe")
+    .getByLabel("Period")
+    .selectOption("6 months");
   await expect(standalone.locator(".review-controls")).toHaveCount(0);
   await standalone.close();
   const pdfDownload = page.waitForEvent("download");
@@ -312,7 +317,9 @@ test("Pele diagrams work in React, Markdown, and offline HTML exports", async ({
   const standalone = await page.context().newPage();
   await standalone.route("**/*", (route) => route.abort());
   await standalone.setContent(await htmlResponse.text());
-  await expect(standalone.locator("svg.pele")).toBeVisible();
+  await expect(
+    standalone.frameLocator("iframe").locator("svg.pele"),
+  ).toBeVisible();
   await standalone.close();
   const md = await create(request, "Markdown with diagrams", {
     kind: "markdown",
@@ -388,9 +395,13 @@ test("Google Fonts load in previews and HTML exports while other requests stay b
   expect(exported.ok()).toBe(true);
   await page.goto("about:blank");
   await page.setContent(await exported.text());
-  await page.evaluate(() => document.fonts.ready);
+  await page.frameLocator("iframe").locator("h1").waitFor();
+  const exportedFrame = page
+    .frames()
+    .find((frame) => frame.parentFrame() === page.mainFrame())!;
+  await exportedFrame.evaluate(() => document.fonts.ready);
   expect(
-    await page.evaluate(() =>
+    await exportedFrame.evaluate(() =>
       [...document.fonts].some(
         (font) => font.family === "TestFont" && font.status === "loaded",
       ),
@@ -436,11 +447,19 @@ for (const fullDocument of [false, true]) {
     await page.goto("about:blank");
     await page.setContent(await exported.text());
     await expect(page).toHaveTitle("HTML contract");
-    await page.getByRole("button", { name: "Check runtime" }).click();
+    await page
+      .frameLocator("iframe")
+      .getByRole("button", { name: "Check runtime" })
+      .click();
     await expect(
-      page.getByRole("button", { name: "Ready", exact: true }),
+      page
+        .frameLocator("iframe")
+        .getByRole("button", { name: "Ready", exact: true }),
     ).toBeVisible();
-    await expect(page.locator("h1")).toHaveCSS("color", "rgb(20, 60, 90)");
+    await expect(page.frameLocator("iframe").locator("h1")).toHaveCSS(
+      "color",
+      "rgb(20, 60, 90)",
+    );
   });
 }
 
@@ -491,9 +510,14 @@ test("verified CDN scripts execute offline but cannot load runtime dependencies"
     await route.abort();
   });
   await page.setContent(html);
-  await page.getByRole("button", { name: "Check CDN" }).click();
+  await page
+    .frameLocator("iframe")
+    .getByRole("button", { name: "Check CDN" })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Loaded", exact: true }),
+    page
+      .frameLocator("iframe")
+      .getByRole("button", { name: "Loaded", exact: true }),
   ).toBeVisible();
   expect(network).toEqual([]);
   expect(page.workers()).toHaveLength(0);
@@ -523,7 +547,7 @@ for (const prefix of ["", "<style>h1{color:teal}</style>"]) {
     expect(exported.ok()).toBe(true);
     await page.goto("about:blank");
     await page.setContent(await exported.text());
-    await expect(page.locator("body")).toHaveAttribute(
+    await expect(page.frameLocator("iframe").locator("body")).toHaveAttribute(
       "data-initialized",
       "yes",
     );
