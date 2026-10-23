@@ -1,193 +1,87 @@
 # Atelier
 
-A local service for agent-authored artifacts. Agents create standalone pages that can freely combine text, charts, diagrams, images, controls, and browser animations. Humans explore the result, highlight details, leave feedback, and share. The agent revises the same artifact without losing its history.
+Atelier is a local service that lets AI agents create interactive pages. A page can combine text, charts, diagrams, images, forms, and animations.
 
-## Run locally
+Agents create and revise the content through MCP, the CLI, or the HTTP API. You open the page in your browser, leave comments, and export a revision as HTML or PDF. Each artifact keeps the same URL and its revision history.
 
-Requires Node.js 22.13 or newer (a current LTS release is recommended).
+## Start Atelier
 
-```sh
-npm install
-npm run build
-npx playwright install chromium
-node bin/atelier.mjs start
-```
+Requires Node.js 22.13 or later and npm.
 
-Open **http://atelier.localhost:4310**. If your browser does not resolve that hostname, use **http://127.0.0.1:4310**. Both point to the same workspace. `start --no-open` starts without opening a browser. `npm start` also starts the service without opening a browser.
+1. In the repository directory, install the dependencies and build the browser app.
 
-Optionally run `npm link` to make `atelier start` and the other CLI commands available globally. Port-free `atelier.localhost` is deferred; it requires a local proxy or access to port 80.
+   ```sh
+   npm ci
+   npm run build
+   ```
 
-The service binds to IPv4 loopback only. The workspace runs on port 4310 and isolated previews run on 4311. Data is stored in `~/.atelier/atelier.sqlite`. The database contains metadata, complete source snapshots for every revision, comments, and app data. Keeping the complete revision in SQLite makes a revision and its metadata commit atomically. Stop Atelier before copying its data directory for a backup.
+2. Install Chromium for PDF export.
 
-Environment variables:
+   ```sh
+   npx playwright install chromium
+   ```
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ATELIER_PORT` | `4310` | Workspace/API port |
-| `ATELIER_PREVIEW_PORT` | workspace port + 1 | Isolated preview port |
-| `ATELIER_DATA_DIR` | `~/.atelier` | Database directory |
-| `ATELIER_URL` | `http://127.0.0.1:4310` | Service address for CLI/MCP clients |
+3. Start the service.
 
-## Browser experience
+   ```sh
+   node bin/atelier.mjs start
+   ```
 
-Every `/a/<id>` URL opens the artifact as a full-viewport standalone page. There is no persistent workspace sidebar, header, template selector, or editor. A small **Review** control opens optional overlays for:
+   The command opens [Atelier](http://atelier.localhost:4310) in your browser. If that hostname does not resolve, open [127.0.0.1:4310](http://127.0.0.1:4310).
 
-- Comments anchored to selected text or elements, with replies and resolution.
-- Revision history and side-by-side source comparison.
-- Read-only source inspection and copying.
-- HTML/PDF sharing and source download.
+   Keep the process running while you use Atelier. The `start` command runs in the foreground. It does not install a background service.
 
-Review overlays do not resize or remount the artifact, so chart filters, animation, and other live state remain intact. Close the controls or press Escape to return to the page. Exports contain the artifact itself, without review controls.
+## Connect your agent
 
-The root page is a library of agent-created artifacts. It updates as agents publish work; it has no create, import, edit, restore, or duplicate actions. All authoring happens through MCP, CLI, or the HTTP API. Agents can restore old revisions and duplicate artifacts through MCP.
+Atelier provides an MCP server over stdio. The MCP server connects to the running local service and needs no model API key.
 
-React and HTML are general-purpose rendering formats, not categories: one artifact may combine all supported visual content and multiple source files. Markdown and SVG are simpler optional formats. The renderer supports Recharts, D3, Pele for Mermaid syntax, KaTeX, SVG, canvas, and browser WebGL APIs. Example compositions live only in test fixtures; they do not restrict agent output.
-
-An artifact keeps one stable ID: `/a/<id>`. Historical links use `/a/<id>/revisions/<number>`. Updates include `baseRevision`; stale updates return HTTP 409, and agents must reconcile them.
-
-Comments retain their original revision, selected quote, surrounding text, and DOM locator. A unique surviving quote can be located after the DOM moves. Ambiguous or removed selections stay attached to their original revision; Atelier does not guess. `data-atelier-id` attributes or stable element IDs improve anchoring.
-
-## Connect an agent
-
-Atelier owns no model credentials. Run the local service, then add its stdio MCP server to your agent's configuration:
+Add this entry to your agent's MCP configuration. Replace `/absolute/path/to/atelier` with the repository path.
 
 ```json
 {
-  "mcpServers": {
-    "atelier": {
-      "command": "node",
-      "args": ["/absolute/path/to/atelier/bin/atelier.mjs", "mcp"]
-    }
-  }
+	"mcpServers": {
+		"atelier": {
+			"command": "node",
+			"args": ["/absolute/path/to/atelier/bin/atelier.mjs", "mcp"]
+		}
+	}
 }
 ```
 
-Available tools: `list_artifacts`, `get_artifact`, `create_artifact`, `revise_artifact`, `restore_artifact`, `duplicate_artifact`, `list_revisions`, `list_comments`, `add_comment`, and `reply_to_comment`.
-
-Create/read/revise/restore/duplicate MCP results include a browser URL. Agents should share that link and design the artifact as a standalone page with its own composition, freely mixing supported content.
-
-A typical agent cycle:
-
-1. Read the artifact and its latest revision.
-2. Read comments, including anchors and their original revisions.
-3. Mark relevant comments `in_progress` and optionally reply.
-4. Submit the full new content with the current `baseRevision`, author, change summary, and addressed `commentIds`.
-5. Linked comments become `addressed` (ready for review); the user resolves them.
-
-**Comments are queued feedback.** The MCP server exposes them to agents; it does not launch or wake an idle agent. Tell your agent to read Atelier comments, or have your agent's orchestration poll `list_comments`. There is no provider-specific agent runner in this version.
-
-### CLI
+For Codex, register the same server with the CLI instead:
 
 ```sh
-atelier list
-atelier create report.md --title "Research notes" --author "My agent"
-atelier get ARTIFACT_ID
-atelier comments ARTIFACT_ID
-atelier revise ARTIFACT_ID report.md --base 1 --message "Clarify the introduction" --comments COMMENT_ID
-atelier reply ARTIFACT_ID COMMENT_ID "Updated the introduction."
-atelier history ARTIFACT_ID
-atelier export ARTIFACT_ID --format html --output report.html
+codex mcp add atelier -- node /absolute/path/to/atelier/bin/atelier.mjs mcp
 ```
 
-Use `node bin/atelier.mjs` in place of `atelier` if you have not run `npm link`.
+Start a new agent session to load the connection. Ask the agent to create an artifact:
 
-### HTTP API
+> Create a report in Atelier with text, an interactive chart, and a diagram. Give me the artifact URL.
 
-All paths below are relative to `/api`. CLI and MCP use this same API.
+The agent returns a URL such as `http://127.0.0.1:4310/a/<id>`. Open that URL to view the page. The artifact also appears in the library at the root URL.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET / POST | `/artifacts` | List / create |
-| GET | `/artifacts/:id` | Metadata and head revision |
-| GET / POST | `/artifacts/:id/revisions` | History / create revision |
-| GET | `/artifacts/:id/revisions/:n` | Complete immutable revision |
-| POST | `/artifacts/:id/restore` | `{revision, baseRevision, author?}` |
-| POST | `/artifacts/:id/duplicate` | `{revision, author?}` |
-| GET / POST | `/artifacts/:id/comments` | List / add feedback |
-| PATCH | `/artifacts/:id/comments/:cid` | `{status?, reply?, author?}` |
-| GET / PUT | `/artifacts/:id/data` | Read / write `{data}` |
-| POST | `/artifacts/:id/export` | `{revision, format: "html" or "pdf", snapshot?}` |
-| GET | `/events` | Server-sent change notifications |
+## Request a change
 
-Create body: `{title, description?, author?, summary?, content}`. Revision body: `{baseRevision, author, summary, content, commentIds?}`. Comment body: `{revision, body, author?, anchor?}`.
+1. Open an artifact and click **Review**.
+2. Click **Comment**, then **Select a detail**.
+3. Highlight text or select an element.
+4. Enter the change you want and send the comment.
+5. Ask your agent to read the artifact's comments and apply the changes.
 
-## Artifact format
+Comments wait until an agent reads them. Atelier does not start or wake an agent.
 
-```json
-{
-  "kind": "react",
-  "entry": "App.tsx",
-  "files": {
-    "App.tsx": "export default function App() { return <h1>Hello, Atelier.</h1> }"
-  }
-}
-```
+The agent saves a new revision under the same artifact ID. Click **Review**, then **History**, to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 
-Kinds: `react`, `html`, `markdown`, `svg`. React entries default-export a component. Relative imports can reference other files in the manifest. Available packages: `react`, `react-dom`, `recharts`, `d3`, `lucide-react`, `pele`, `mermaid` (compatibility), and `katex`. CSS imports are supported. Dependency versions are pinned by this installation's lockfile; upgrades can change rendering and should be tested against existing artifacts.
+## Export a revision
 
-HTML can include inline scripts and local script/style references from its `files`. Images should be data URLs, or included as SVG text / image data URLs in `files` and referenced by relative path. React can import those files as strings. External network assets, arbitrary npm installation, server-side execution, and video are outside this version's scope. Browser previews disallow network requests and embedded frames.
+Open the revision you want to share. Click **Review**, then **Share**.
 
-### Mermaid diagrams with Pele
+- **Save as HTML** downloads a standalone file with supported interactions and embedded assets.
+- **Save as PDF** downloads a static rendering of the current state.
+- **Download source** downloads the artifact's files as a JSON manifest.
 
-[Pele](https://github.com/obsidianmd/pele) is the preferred renderer for Mermaid syntax. It produces SVG synchronously and supports CSS-variable themes. The original `mermaid` package remains available so older artifacts and revisions retain their renderer.
+Exports exclude Atelier's review controls. Custom controls need the [export state API](docs/reference.md#artifact-state) to retain their state. PDF pagination can change the layout.
 
-Markdown artifacts render fenced `mermaid` blocks into SVG automatically, including in HTML and PDF exports. Ordinary code blocks stay code. Invalid diagram syntax produces a preview error that can be sent to the agent.
+Atelier runs on your computer. Public hosting, team collaboration, and video are not supported.
 
-For React, use Pele's responsive mount API:
-
-```jsx
-import { useEffect, useRef } from "react";
-import { mount } from "pele";
-
-function Diagram({ source }) {
-  const container = useRef(null);
-  useEffect(() => {
-    const diagram = mount(container.current, source);
-    return () => diagram.destroy();
-  }, [source]);
-  return <div ref={container} />;
-}
-```
-
-Set `--pele-fg`, `--pele-bg`, `--pele-surface`, `--pele-border`, and `--pele-line` on the container to match the artifact. `pele/core` and `pele/diagrams/<type>` imports allow narrower bundles. Pele targets Mermaid syntax but has its own layout and visual styling; it is not a pixel-identical replacement for Mermaid.js. All package code is bundled locally for offline export.
-
-### Persistent data and export state
-
-Inside an artifact, use:
-
-```js
-const data = await window.atelier.getData();
-await window.atelier.setData({ count: (data?.count ?? 0) + 1 });
-```
-
-App data is separate from source revisions, scoped to the artifact, and limited to 2 MB of JSON. Restoring source does not roll back user data. HTML exports include a snapshot of that data and use local browser storage where available; they do not write back to Atelier.
-
-For React state or custom controls that must survive export:
-
-```jsx
-const [period, setPeriod] = useState(
-  window.atelier.getState()?.period ?? "6 months"
-);
-window.atelier.setState({ period });
-```
-
-At export, Atelier captures registered JSON state and ordinary form values. Arbitrary internal application state cannot be inferred; artifacts should use this contract for filters, selected slides, and other meaningful state. Canvas frames are captured for PDF; HTML retains live animation. WebGL canvas capture depends on the artifact making its drawing buffer readable.
-
-HTML exports bundle the supported dependencies and local assets into one file. PDF uses Chromium and print CSS with selectable text where supported; it is static and paginated. A PDF of a presentation captures the current slide, not every slide. Exporting from the CLI renders default UI state plus saved app data; exporting from the browser additionally captures current UI state. There is no guarantee of pixel-identical layout across recipient browser sizes or PDF pagination.
-
-## Development
-
-```sh
-npm run build          # Type-check and build the workspace UI
-npm run dev            # Watch/restart the service (uses the built UI)
-npx vite               # Optional frontend dev server on 127.0.0.1:5173
-npm test               # Storage, renderer, API, and real MCP client integration
-npm run test:browser   # Standalone pages, mixed content, review, exports, isolation
-npm run format:check
-```
-
-Browser tests use separate ports and `.atelier/test` data. `test-results/` contains the workspace screenshot and failure traces.
-
-## Scope
-
-This is a local, single-user workspace. It has no public hosting, public links, team accounts, agent execution engine, in-artifact model calls, connected external apps, or video support. Generated browser code runs in a separate-origin iframe without same-origin privileges. The service rejects unrecognized hosts and cross-origin API requests. All applications running as your OS user should be treated as trusted; this is not a multi-user security boundary.
+See the [reference](docs/reference.md) for artifact formats, supported libraries, configuration, agent tools, and development commands.
