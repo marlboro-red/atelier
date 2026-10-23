@@ -1319,7 +1319,8 @@ button svg {
   padding: 8px;
   margin: 8px 0;
 }
-.agent-connect select {
+.agent-connect select,
+.agent-connect input {
   font: inherit;
   padding: 4px;
   background: white;
@@ -1329,4 +1330,11 @@ button svg {
 .agent-connect button {
   font-size: 11px;
   padding: 0;
+}
+
+.agent-connect input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
 }

@@ -255,7 +255,7 @@ test("Claude channel creation connects by default and receipt for one artifact c
   }
 });
 
-test("plain MCP creation reports that it cannot wake the client rather than launching an agent", async () => {
+test("plain MCP creation reports a missing feedback target without launching an agent", async () => {
   const f = await fixture([]);
   try {
     await f.connect();
@@ -266,7 +266,7 @@ test("plain MCP creation reports that it cannot wake the client rather than laun
       }),
     );
     assert.equal(a.feedback.connected, false);
-    assert.match(a.feedback.reason, /cannot wake/);
+    assert.match(a.feedback.reason, /no feedback target/);
     assert.equal(
       (await f.request(`/artifacts/${a.id}/feedback`)).connected,
       false,

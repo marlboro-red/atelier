@@ -127,7 +127,13 @@ atelier agent "Create a report with a chart and diagram" --agent codex --cwd .
 
 Use `--agent copilot` for GitHub Copilot CLI or `--agent claude` for Claude Code. Every artifact created through that session's MCP connection receives feedback in the same session by default. Keep the terminal open. Claude asks you to enable its local development channel.
 
-Ordinary MCP connections cannot wake Codex or Copilot conversations. For an existing artifact, use **Comments → Connect an agent** or run `atelier watch ARTIFACT_ID --agent codex --cwd .`. See [automatic comment delivery](docs/agent-feedback.md) for setup, session resume, and interrupted deliveries.
+To send comments to a Codex conversation you already have open, keep that conversation open and run:
+
+```sh
+atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
+```
+
+Use the conversation's session UUID. The watcher sends comments through Codex's queue without starting another session. **Comments → Connect an agent** also accepts the UUID and copies the command. See [automatic comment delivery](docs/agent-feedback.md) for setup and interrupted deliveries.
 
 The agent saves a new revision under the same artifact ID. The thread links to the revision that addressed it. Click **History** in the header to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 

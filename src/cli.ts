@@ -4,6 +4,7 @@ import {
   creatorRequest,
   CreatorFeedback,
 } from "./agents/creator.js";
+import { connectCodexSession } from "./agents/codex-queue.js";
 import { createAdapter, type Adapter } from "./agents/adapters.js";
 import {
   feedbackRequest,
@@ -461,12 +462,29 @@ program
   .requiredOption("--cwd <directory>", "Working directory for the agent")
   .option(
     "--session <id>",
-    "Resume an explicit session; do not use one open in another client",
+    "Existing session UUID; Codex stays open, other providers resume it",
   )
+  .option(
+    "--new-session",
+    "Explicitly start a new Codex session instead of connecting",
+  )
+  .option("--codex-socket <path>", "Custom local Codex app-server socket")
   .action(async (id, options) => {
     const provider = z
       .enum(["claude", "codex", "copilot"])
       .parse(options.agent);
+    if (options.newSession && options.session)
+      throw new Error("Choose --session or --new-session, not both");
+    if (provider !== "codex" && (options.newSession || options.codexSocket))
+      throw new Error("--new-session and --codex-socket apply to Codex only");
+    if (provider === "codex" && !options.session && !options.newSession)
+      throw new Error(
+        "Codex watch requires --session SESSION_ID to connect to your open conversation. To intentionally start a separate conversation, pass --new-session.",
+      );
+    if (options.newSession && options.codexSocket)
+      throw new Error(
+        "--codex-socket connects to an existing session; it cannot be used with --new-session",
+      );
     const api = feedbackRequest(base);
     await api(`/artifacts/${segment(id)}`);
     if (provider === "claude") {
@@ -512,17 +530,24 @@ program
       process.stderr.write(text.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ""));
     let adapter: Adapter | undefined;
     try {
-      adapter = await createAdapter({
-        provider,
-        artifact: id,
-        cwd: resolve(options.cwd),
-        base,
-        session: options.session,
-        approve: terminalApproval((value) => {
-          state = value;
-        }, controller.signal),
-        log,
-      });
+      adapter =
+        provider === "codex" && options.session
+          ? await connectCodexSession({
+              session: options.session,
+              cwd: resolve(options.cwd),
+              socket: options.codexSocket,
+            })
+          : await createAdapter({
+              provider,
+              artifact: id,
+              cwd: resolve(options.cwd),
+              base,
+              session: options.session,
+              approve: terminalApproval((value) => {
+                state = value;
+              }, controller.signal),
+              log,
+            });
       const close = adapter.close;
       adapter.close = () => {
         controller.abort();
@@ -593,7 +618,7 @@ program
               reason:
                 !watch || !options.watch
                   ? "Automatic feedback was disabled."
-                  : "This MCP connection cannot wake its creating session. Start with atelier agent 'Your request' --agent claude|codex|copilot --cwd . for automatic feedback; existing artifacts can use atelier watch.",
+                  : "This MCP connection has no feedback target. Connect an open Codex conversation with atelier watch ID --agent codex --cwd . --session UUID, or start with atelier agent 'Your request' --agent claude|codex|copilot --cwd . for automatic feedback; existing artifacts can use atelier watch.",
             },
           };
         }

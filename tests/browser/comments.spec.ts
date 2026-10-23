@@ -199,7 +199,19 @@ test("mobile comments use a compact popup and show connection state in the threa
   await page.getByRole("button", { name: "Comments (1)" }).click();
   await page.getByText("Connect an agent", { exact: true }).click();
   await expect(page.locator(".agent-connect code")).toContainText(
-    `atelier watch ${a.id} --agent codex --cwd .`,
+    `atelier watch ${a.id} --agent codex --cwd . --session SESSION_ID`,
+  );
+  await expect(
+    page.getByRole("button", { name: "Copy command" }),
+  ).toBeDisabled();
+  await page
+    .getByLabel("Codex session UUID")
+    .fill("00000000-0000-4000-8000-000000000001");
+  await expect(
+    page.getByRole("button", { name: "Copy command" }),
+  ).toBeEnabled();
+  await expect(page.locator(".agent-connect code")).toContainText(
+    "--session 00000000-0000-4000-8000-000000000001",
   );
   const connected = await (
     await request.post(`/api/artifacts/${a.id}/feedback/connect`, {

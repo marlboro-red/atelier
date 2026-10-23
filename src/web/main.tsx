@@ -65,6 +65,12 @@ function App() {
   } | null>(null);
   const [sending, setSending] = useState(false);
   const [connectionProvider, setConnectionProvider] = useState("codex");
+  const [connectionSession, setConnectionSession] = useState("");
+  const validConnectionSession =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      connectionSession,
+    );
+  const connectionCommand = `atelier watch ${artifact?.id ?? "ARTIFACT_ID"} --agent ${connectionProvider} --cwd .${connectionProvider === "codex" ? ` --session ${validConnectionSession ? connectionSession : "SESSION_ID"}` : ""}`;
   useEffect(() => {
     if (!locationState.id) {
       setFeedback(null);
@@ -901,8 +907,9 @@ function App() {
                         <details className="agent-connect">
                           <summary>Connect an agent</summary>
                           <p>
-                            Run this command in the agent's working directory.
-                            Keep the terminal open.
+                            {connectionProvider === "codex"
+                              ? "Keep your Codex conversation open. Enter its session UUID, then run this command in another terminal."
+                              : "Run this command in the agent's working directory. Keep the terminal open."}
                           </p>
                           <label>
                             Agent{" "}
@@ -919,12 +926,32 @@ function App() {
                               </option>
                             </select>
                           </label>
-                          <code>{`atelier watch ${artifact.id} --agent ${connectionProvider} --cwd .`}</code>
+                          {connectionProvider === "codex" && (
+                            <label>
+                              Codex session UUID
+                              <input
+                                aria-label="Codex session UUID"
+                                placeholder="Session UUID from Codex"
+                                value={connectionSession}
+                                maxLength={36}
+                                onChange={(event) =>
+                                  setConnectionSession(
+                                    event.target.value.trim(),
+                                  )
+                                }
+                              />
+                            </label>
+                          )}
+                          <code>{connectionCommand}</code>
                           <button
+                            disabled={
+                              connectionProvider === "codex" &&
+                              !validConnectionSession
+                            }
                             onClick={() =>
                               run(async () => {
                                 await navigator.clipboard.writeText(
-                                  `atelier watch ${artifact.id} --agent ${connectionProvider} --cwd .`,
+                                  connectionCommand,
                                 );
                                 notify("Connection command copied");
                               })

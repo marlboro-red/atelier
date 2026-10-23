@@ -1,6 +1,6 @@
 # Handle comments automatically
 
-Start an agent through atelier to create artifacts and handle their comments in the same session. Keep atelier and the agent terminal open.
+Connect an open Codex conversation to an artifact, or start a creator session through atelier. Keep atelier and the agent terminal open.
 
 ## Create with automatic feedback
 
@@ -16,12 +16,12 @@ Replace the quoted request with your task. Codex and Copilot print their session
 
 Open the returned artifact URL and leave a comment. **Comments** shows the connected agent. The creation tool also reports `feedback.connected`. If the connection fails, the artifact is still saved and the result explains the failure. Set `watch: false` in `create_artifact` to leave an artifact disconnected.
 
-Ordinary MCP connections cannot wake arbitrary Codex or Copilot conversations. atelier does not discover live sessions, resume them behind your back, or start a second agent after creation. Use `atelier agent` when you want automatic feedback from the start. No command changes your global MCP configuration.
+A plain MCP creation does not identify which conversation should receive feedback. Connect an existing Codex session by its UUID, or use a creator session. atelier does not guess the target conversation or start a second agent after creation. Use `atelier agent` when you want automatic feedback from the start. No command changes your global MCP configuration.
 
 ## Connect an existing artifact
 
 ```sh
-atelier watch ARTIFACT_ID --agent codex --cwd .
+atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
 atelier watch ARTIFACT_ID --agent copilot --cwd .
 atelier watch ARTIFACT_ID --agent claude --cwd .
 ```
@@ -36,20 +36,33 @@ Use the interactive terminal. Claude ignores the development-channel flag in `-p
 
 See the [Claude Code Channels reference](https://code.claude.com/docs/en/channels-reference).
 
-### Codex and GitHub Copilot CLI
+### Keep an existing Codex conversation open
 
-Codex uses its app-server protocol. Copilot uses ACP over stdio. These are managed sessions started by atelier, not attachments to an arbitrary open terminal conversation.
-
-To resume an explicit saved session, add its ID:
+Keep your Codex conversation open and copy its session UUID. The session must already have atelier's MCP tools connected to the same atelier service. In another terminal, run:
 
 ```sh
 atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
+```
+
+The watcher connects to Codex's running local server and checks that the session is loaded. It uses `codex queue` to send comments into that conversation. The original client stays open and handles its own approvals. atelier does not start or resume a thread, change its model or permissions, or replace its MCP configuration.
+
+Use a Codex version with `codex queue` and the shared local app server. A session launched with `--no-daemon` is not available through the shared socket. For a custom local server, add `--codex-socket /absolute/path/to/server.sock`. If the session is unavailable, the watcher reports an error. It never falls back to a new session.
+
+For this connection, a delivered event means Codex accepted the message into its queue. Check the original conversation and artifact for completion. **Disconnect** stops further forwarding. It does not cancel messages already queued in Codex or stop your conversation.
+
+If you intentionally want a separate Codex conversation, use `--new-session` instead of `--session`. `atelier agent` also starts a new creator session. See the [Codex queue reference](https://learn.chatgpt.com/docs/cli/reference) and [app-server documentation](https://learn.chatgpt.com/docs/app-server).
+
+### Resume a Copilot or Claude session
+
+Copilot uses ACP over stdio. To resume a saved session, add its ID:
+
+```sh
 atelier watch ARTIFACT_ID --agent copilot --cwd . --session SESSION_ID
 ```
 
-Stop any other client using that session before resuming it. Use the same working directory. Claude also accepts `--session`, which passes the ID to `claude --resume`.
+Stop any other client using that Copilot session before resuming it. Use the same working directory. Claude also accepts `--session`, which passes the ID to `claude --resume`. These resume flows differ from Codex's queue connection to an open conversation.
 
-See the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server) and [Copilot CLI ACP reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server). ACP and custom Claude channels are preview interfaces and may change between CLI releases.
+See the [Copilot CLI ACP reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server). ACP and custom Claude channels are preview interfaces and may change between CLI releases.
 
 ## Leave feedback
 
@@ -61,7 +74,7 @@ The agent reads the source and thread, replies, and publishes revisions under th
 
 ## Check or stop delivery
 
-Open **Comments** to see the connection, queued feedback, and permission requests. For Codex and Copilot, approve unrelated tool actions in the terminal when prompted. Without an interactive terminal, those requests are denied.
+Open **Comments** to see the connection, queued feedback, and permission requests. An existing Codex conversation handles permissions in its own client. For managed creator sessions and Copilot watchers, approve unrelated tool actions in the watcher terminal. Without an interactive watcher terminal, those managed requests are denied.
 
 Press **Ctrl+C** to stop a managed watcher, or click **Disconnect** to stop further delivery. Watchers check the connection every five seconds. A turn already running in a shared creator session may continue after that artifact is disconnected. Stop the agent terminal if you need to end the turn. Other artifacts in the session stay connected.
 
@@ -69,7 +82,7 @@ If delivery is interrupted, check the comment and latest revision before using *
 
 ## Permission boundaries
 
-Starting `atelier watch` authorizes the scoped atelier tools for that artifact. That MCP connection rejects other artifact IDs, creation, and duplication. Managed Codex and Copilot creator sessions allow creation, then restrict reads and revisions to artifacts created in that session. Claude creator channels retain the normal MCP tools and automatically connect only artifacts created through that connection. File inputs must resolve inside the chosen working directory, including through symlinks. This scope does not restrict every tool offered by the agent itself.
+An existing Codex queue connection retains the session's existing tool permissions and MCP access. The forwarded request names one artifact but does not restrict the session's other tools. A watcher that starts or resumes a managed agent authorizes the scoped atelier tools for that artifact. That MCP connection rejects other artifact IDs, creation, and duplication. Managed Codex and Copilot creator sessions allow creation, then restrict reads and revisions to artifacts created in that session. Claude creator channels retain the normal MCP tools and automatically connect only artifacts created through that connection. File inputs must resolve inside the chosen working directory, including through symlinks. This scope does not restrict every tool offered by the agent itself.
 
 Managed Codex sessions use a read-only filesystem sandbox and request approval for untrusted commands. Copilot retains its CLI sandbox settings and receives approval for the scoped atelier MCP server only. Other permission requests are handled individually. atelier never passes an allow-all-tools or sandbox-bypass flag.
 
