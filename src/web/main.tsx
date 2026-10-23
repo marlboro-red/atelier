@@ -61,7 +61,9 @@ function App() {
     [runtimeErrors, setRuntimeErrors] = useState<string[]>([]),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [previewPort, setPreviewPort] = useState<number | null>(null),
+    [preview, setPreview] = useState<{ key: string; html: string } | null>(
+      null,
+    ),
     [sourceFile, setSourceFile] = useState(""),
     [compare, setCompare] = useState<Revision | null>(null);
   const [management, setManagement] = useState<{
@@ -230,9 +232,6 @@ function App() {
     };
   }, [locationState.id, locationState.revision]);
   useEffect(() => {
-    api("/health")
-      .then((h) => setPreviewPort(h.previewPort))
-      .catch((e) => setError(e.message));
     const pop = () => setLocationState(route());
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeReview();
@@ -245,6 +244,26 @@ function App() {
     };
   }, []);
   useEffect(() => {
+    if (!revision) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    const key = `${revision.artifactId}:${revision.number}`;
+    api<{ html: string }>(
+      `/artifacts/${revision.artifactId}/revisions/${revision.number}/preview`,
+    )
+      .then(({ html }) => {
+        if (!cancelled) setPreview({ key, html });
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [revision?.artifactId, revision?.number]);
+  useEffect(() => {
     if (revision) {
       setSourceFile(revision.content.entry);
       setRuntimeErrors([]);
@@ -252,7 +271,7 @@ function App() {
     }
   }, [revision?.artifactId, revision?.number]);
   useEffect(() => {
-    document.title = artifact ? `${artifact.title} · Atelier` : "Atelier";
+    document.title = artifact ? `${artifact.title} · atelier` : "atelier";
   }, [artifact?.title]);
   useEffect(() => {
     setReviewOpen(false);
@@ -376,13 +395,15 @@ function App() {
     <div className={showingArtifact ? "artifact-page" : "library-page"}>
       {showingArtifact ? (
         <>
-          {artifact && revision && previewPort ? (
+          {artifact &&
+          revision &&
+          preview?.key === `${artifact.id}:${revision.number}` ? (
             <iframe
               key={`${artifact.id}:${revision.number}`}
               ref={iframe}
               title="Artifact"
               sandbox="allow-scripts"
-              src={`http://127.0.0.1:${previewPort}/preview/${artifact.id}/${revision.number}`}
+              srcDoc={preview.html}
               className="artifact-frame"
             />
           ) : (
@@ -859,7 +880,7 @@ function App() {
                     <div className="share-options">
                       <p>
                         Share revision {revision.number} with its current state.
-                        Recipients see only the document, without Atelier’s
+                        Recipients see only the document, without atelier’s
                         header or review controls.
                       </p>
                       <button
@@ -1002,7 +1023,7 @@ function App() {
           ) : (
             <section className="empty-library">
               <h2>No artifacts yet</h2>
-              <p>Ask your connected agent to create an artifact in Atelier.</p>
+              <p>Ask your connected agent to create an artifact in atelier.</p>
             </section>
           )}
         </main>

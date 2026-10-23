@@ -12,7 +12,7 @@ const store = new Store(
   process.env.ATELIER_DATA_DIR ?? resolve(homedir(), ".atelier"),
 );
 const app = createApp(store, previewPort);
-const preview = createPreviewApp(store, port);
+const preview = createPreviewApp();
 const dist = resolve(root, "dist/web");
 if (!existsSync(dist))
   throw new Error("Build the workspace first with npm run build");
@@ -26,7 +26,7 @@ try {
   await preview.listen({ host: "127.0.0.1", port: previewPort });
   await app.listen({ host: "127.0.0.1", port });
   console.log(
-    `\n  Atelier → http://atelier.localhost:${port}\n  Fallback → http://127.0.0.1:${port}\n`,
+    `\n  atelier → http://atelier.localhost:${port}\n  Fallback → http://127.0.0.1:${port}\n`,
   );
 } catch (e) {
   console.error(e);

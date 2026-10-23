@@ -1,4 +1,4 @@
-# Atelier authoring patterns
+# atelier authoring patterns
 
 These are small examples to adapt. They do not prescribe a page layout or require every artifact to include charts, diagrams, or controls.
 
@@ -152,7 +152,7 @@ The screenshot is a view of the workspace. Shared HTML and PDF still omit its he
 
 ## Sharing
 
-HTML exports embed declared CDN scripts and local assets, but Google Fonts remain remote. Prefer an included font or a system stack when the recipient must work offline. The exported file is sandboxed, fills the viewport, and contains no review header. Use the Atelier data API rather than trying to access its parent or browser storage directly.
+HTML exports embed declared CDN scripts and local assets, but Google Fonts remain remote. Prefer an included font or a system stack when the recipient must work offline. The exported file is sandboxed, fills the viewport, and contains no review header. Use the atelier data API rather than trying to access its parent or browser storage directly.
 
 For PDF, keep labels and the selected chart view visible without hovering. Use print styles to remove control-only UI, expand clipped content, and avoid splitting small figures. Large documents still need pagination; do not promise pixel-identical PDF layout.
 

@@ -1,8 +1,8 @@
-# Install the Atelier authoring skill
+# Install the atelier authoring skill
 
 [atelier-artifacts](../skills/atelier-artifacts/SKILL.md) teaches agents how to choose a format, design a mixed-content page, preserve state in exports, and revise an existing artifact from comments. Its examples are patterns to adapt, not mandatory templates.
 
-The skill is optional. Atelier's MCP server still supplies the essential runtime rules. Connect MCP and start Atelier using the [setup guide](../README.md#connect-your-agent) before asking an agent to create an artifact.
+The skill is optional. atelier's MCP server still supplies the essential runtime rules. Connect MCP and start atelier using the [setup guide](../README.md#connect-your-agent) before asking an agent to create an artifact.
 
 ## Install for your agent
 
@@ -15,9 +15,9 @@ Copy the entire `skills/atelier-artifacts` folder, including `references` and `a
 | [Copilot in VS Code](https://code.visualstudio.com/docs/agent-customization/agent-skills) | `~/.copilot/skills/` | `.github/skills/` |
 | [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills) | `~/.copilot/skills/` | `.github/skills/` |
 
-Personal installs work across projects. Project installs belong in the project where you use the agent, which need not be Atelier's source repository. The final path must end in `atelier-artifacts/SKILL.md`, with its supporting folders alongside it.
+Personal installs work across projects. Project installs belong in the project where you use the agent, which need not be atelier's source repository. The final path must end in `atelier-artifacts/SKILL.md`, with its supporting folders alongside it.
 
-On macOS or Linux, run the commands for your client from the cloned Atelier directory.
+On macOS or Linux, run the commands for your client from the cloned atelier directory.
 
 ### Codex
 
@@ -50,7 +50,7 @@ On Windows, copy the folder to the equivalent directory under your user profile,
 
 Start a new agent session after installation, then ask:
 
-> Use the atelier-artifacts skill to create a report in Atelier with text, a diagram, and an interactive chart.
+> Use the atelier-artifacts skill to create a report in atelier with text, a diagram, and an interactive chart.
 
 For an existing artifact:
 
@@ -58,4 +58,4 @@ For an existing artifact:
 
 The agent can also select the skill automatically when a request matches its description. The skill does not grant new tool permissions or start a background agent.
 
-After updating Atelier with `git pull`, copy the folder again to update the installed skill. Installing a skill does not make localhost reachable from a cloud agent; use a client that can reach your local Atelier service.
+After updating atelier with `git pull`, copy the folder again to update the installed skill. Installing a skill does not make localhost reachable from a cloud agent; use a client that can reach your local atelier service.

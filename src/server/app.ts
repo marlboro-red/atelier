@@ -31,7 +31,7 @@ export function createApp(store: Store, previewPort = 4311) {
       origin !== "http://127.0.0.1:5173"
     )
       throw new HttpError(403, "Cross-origin access denied");
-    reply.header("Content-Security-Policy", workspacePolicy(previewPort));
+    reply.header("Content-Security-Policy", workspacePolicy());
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
   });
@@ -123,6 +123,27 @@ export function createApp(store: Store, previewPort = 4311) {
       z.coerce.number().int().positive().parse(params(req).n),
     ),
   );
+  app.get("/api/artifacts/:id/revisions/:n/preview", async (req, reply) => {
+    const { id, n } = params(req);
+    const r = store.revision(id, z.coerce.number().int().positive().parse(n));
+    reply.header("Cache-Control", "no-store");
+    try {
+      return {
+        html: await render(r.content, {
+          id,
+          revision: r.number,
+          data: store.data(id),
+        }),
+      };
+    } catch (error) {
+      const message = JSON.stringify(
+        error instanceof Error ? error.message : String(error),
+      ).replace(/</g, "\\u003c");
+      return {
+        html: `<html><body style="font-family:system-ui;padding:40px"><h2>Preview needs a fix</h2><pre id="error" style="white-space:pre-wrap"></pre><script>const message=${message};document.getElementById('error').textContent=message;parent.postMessage({atelier:true,type:'runtime-error',message},'*')</script></body></html>`,
+      };
+    }
+  });
   app.post("/api/artifacts/:id/revisions", async (req, reply) => {
     const id = params(req).id;
     const r = store.update(id, revisionSchema.parse(req.body));
@@ -285,40 +306,14 @@ export function createApp(store: Store, previewPort = 4311) {
   });
   return app;
 }
-export function createPreviewApp(store: Store, workspacePort = 4310) {
+// Keep the old port closed to executable previews for existing bookmarks.
+export function createPreviewApp() {
   const app = Fastify();
-  app.get("/preview/:id/:n", async (req, reply) => {
-    const host = req.headers.host?.split(":")[0];
-    if (!["localhost", "127.0.0.1", "atelier.localhost"].includes(host ?? ""))
-      return reply.code(403).send("Invalid host");
-    if (req.headers["sec-fetch-dest"] !== "iframe")
-      return reply
-        .code(403)
-        .type("text/plain")
-        .send("Open this artifact through the Atelier workspace.");
-    const { id, n } = req.params as any;
-    reply.header(
-      "Content-Security-Policy",
-      `sandbox allow-scripts; frame-ancestors http://atelier.localhost:${workspacePort} http://localhost:${workspacePort} http://127.0.0.1:${workspacePort} http://127.0.0.1:5173`,
-    );
-    reply.header("Cache-Control", "no-store");
-    try {
-      const r = store.revision(id, Number(n));
-      return reply.type("text/html").send(
-        await render(r.content, {
-          id,
-          revision: r.number,
-          data: store.data(id),
-        }),
-      );
-    } catch (e: any) {
-      const message = JSON.stringify(e.message).replace(/</g, "\\u003c");
-      return reply
-        .type("text/html")
-        .send(
-          `<html><body style="font-family:system-ui;padding:40px"><h2>Preview needs a fix</h2><pre id="error" style="white-space:pre-wrap"></pre><script>const message=${message};document.getElementById('error').textContent=message;parent.postMessage({atelier:true,type:'runtime-error',message},'*')</script></body></html>`,
-        );
-    }
-  });
+  app.get("/preview/:id/:n", async (_req, reply) =>
+    reply
+      .code(403)
+      .type("text/plain")
+      .send("Open this artifact through the atelier workspace."),
+  );
   return app;
 }

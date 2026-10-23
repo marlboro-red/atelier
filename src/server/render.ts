@@ -53,7 +53,7 @@ async function htmlDocument(source: string) {
     document.childNodes.some((node) => node.nodeName === "#documentType") ||
     [html, head, body].some((node) => node.sourceCodeLocation?.startTag);
   if (!isDocument) {
-    // A fragment already has a body supplied by Atelier. Do not let the full
+    // A fragment already has a body supplied by atelier. Do not let the full
     // document parser promote its leading styles and scripts into the head.
     head.childNodes = [];
     body.childNodes = parseFragment(body, source, {}).childNodes;
@@ -79,7 +79,7 @@ async function htmlDocument(source: string) {
       for (const child of node.childNodes) await embedScripts(child);
   }
   await embedScripts(html);
-  // Atelier owns encoding, viewport, and security policy. Keep authored styles,
+  // atelier owns encoding, viewport, and security policy. Keep authored styles,
   // scripts, metadata, and attributes on the single document shell.
   head.childNodes = head.childNodes.filter((node) => {
     if (!("tagName" in node) || node.tagName !== "meta") return true;
@@ -413,7 +413,7 @@ function bridge(config: {
   });
   // srcdoc inherits the viewer's base URL. Handle local anchors in the
   // artifact itself instead of navigating the frame to the viewer file.
-  if (config.standalone && parent !== window)
+  if (parent !== window)
     addEventListener("click", (event) => {
       if (event.defaultPrevented || !(event.target instanceof Element)) return;
       const link = event.target.closest("a[href]");
@@ -685,7 +685,7 @@ export async function render(
   }
   // SVG titles can contain elements. Never promote serialized artifact markup
   // into the trusted viewer's HTML title (an HTML RCDATA context).
-  const titleText = attribute(title ? textContent(title) : "Atelier artifact");
+  const titleText = attribute(title ? textContent(title) : "atelier artifact");
   const storage = `const __name=(fn)=>fn;(${exportDataBridge.toString()})(${escape(JSON.stringify({ id: options.id, data: options.data ?? null }))});`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${artifactPolicy}"><title>${titleText}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style><script>${storage.replace(/<\/script/gi, "<\\/script")}</script></head><body><iframe title="Artifact" sandbox="allow-scripts" srcdoc="${attribute(rendered)}"></iframe></body></html>`;
 }

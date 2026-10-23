@@ -1,10 +1,10 @@
-# Atelier reference
+# atelier reference
 
-This document describes Atelier's runtime, artifact format, and agent interfaces. The [README](../README.md) covers setup and review.
+This document describes atelier's runtime, artifact format, and agent interfaces. The [README](../README.md) covers setup and review.
 
 ## Runtime and storage
 
-The service binds to `127.0.0.1`. MCP responses use `atelier.localhost` for browser links when the service address is `127.0.0.1` or `localhost`, preserving the configured port. The browser app and API use port `4310`. Artifact previews use a separate origin on port `4311`.
+The service binds to `127.0.0.1`. MCP responses use `atelier.localhost` for browser links when the service address is `127.0.0.1` or `localhost`, preserving the configured port. The browser app and API use port `4310`. Artifact previews load as sandboxed inline documents with opaque origins. The legacy preview port (`4311`) rejects direct preview URLs.
 
 The default database is `~/.atelier/atelier.sqlite`. SQLite stores artifact metadata, complete source revisions, comments, and app data. Revision content and metadata commit in one transaction. A file-copy backup requires the service to be stopped and the complete data directory to be copied.
 
@@ -58,9 +58,9 @@ The schema is defined in [src/shared/schema.ts](../src/shared/schema.ts).
 | `files` | Between 1 and 100 files, with string contents |
 | File path | Relative, at most 240 characters; no backslashes, empty segments, `.` segments, or `..` segments |
 
-React entries default-export a component. Relative imports can reference other files in the artifact, including CSS. Use literal paths, including with `import()`: computed imports cannot load files from the service filesystem. Write HTML as a page fragment, with optional `<style>` and `<script>` tags. Atelier supplies `<!doctype html>`, `<html>`, `<head>`, `<body>`, the security policy, and the runtime. HTML supports inline scripts and references to local script and style files.
+React entries default-export a component. Relative imports can reference other files in the artifact, including CSS. Use literal paths, including with `import()`: computed imports cannot load files from the service filesystem. Write HTML as a page fragment, with optional `<style>` and `<script>` tags. atelier supplies `<!doctype html>`, `<html>`, `<head>`, `<body>`, the security policy, and the runtime. HTML supports inline scripts and references to local script and style files.
 
-Full HTML documents are also accepted. Atelier merges their head content and document attributes into one shell, preserving titles, styles, scripts, and body content. Atelier controls charset, viewport, and security policy metadata.
+Full HTML documents are also accepted. atelier merges their head content and document attributes into one shell, preserving titles, styles, scripts, and body content. atelier controls charset, viewport, and security policy metadata.
 
 ```html
 <style>h1 { color: coral; }</style>
@@ -93,7 +93,7 @@ Use an exact version published at least 14 days ago. Tags, version ranges, unver
 <script>$('#example').on('click', function () { $(this).text('Clicked'); });</script>
 ```
 
-Atelier downloads and embeds only the declared JavaScript file. Libraries cannot fetch extra scripts, workers, fonts, map tiles, or data at runtime. Use a self-contained browser build; module files with external imports will not work. External stylesheets are limited to Google Fonts, with font files from `fonts.gstatic.com`. Inline CSS and local CSS files remain supported.
+atelier downloads and embeds only the declared JavaScript file. Libraries cannot fetch extra scripts, workers, fonts, map tiles, or data at runtime. Use a self-contained browser build; module files with external imports will not work. External stylesheets are limited to Google Fonts, with font files from `fonts.gstatic.com`. Inline CSS and local CSS files remain supported.
 
 The loader checks supplied `integrity` hashes, limits each script to 5 MiB, and accepts at most 16 CDN scripts per artifact. Verification failures appear as preview errors. Exported HTML embeds the scripts, so those scripts do not need a network connection after export. Google Fonts still require internet access.
 
@@ -151,7 +151,7 @@ Comment status has four values:
 | `addressed` | Ready for review | An agent has submitted a revision linked to the comment, or set this status |
 | `resolved` | Resolved | The thread is closed |
 
-Agents read comments through MCP, the CLI, or the API. Atelier does not launch agents. A revision's `commentIds` marks linked, unresolved comments as `addressed`.
+Agents read comments through MCP, the CLI, or the API. atelier does not launch agents. A revision's `commentIds` marks linked, unresolved comments as `addressed`.
 
 ## Artifact state
 
@@ -192,11 +192,11 @@ Both export formats use a specified source revision and the artifact's saved app
 | PDF | Uses Chromium, print CSS, and A4 pagination to render a static document |
 | Source JSON | Contains the artifact's `content` object |
 
-HTML exports include a copy of app data and render inside a sandboxed, full-page viewer without review controls. The viewer handles local browser storage where available; the artifact cannot access the parent page or write back to Atelier. In-page links still work, while navigation to other pages is blocked.
+HTML exports include a copy of app data and render inside a sandboxed, full-page viewer without review controls. The viewer handles local browser storage where available; the artifact cannot access the parent page or write back to atelier. In-page links still work, while navigation to other pages is blocked.
 
-Atelier cannot infer arbitrary component state. Custom filters and slide selection require the export state methods. A presentation PDF captures the current slide. PDF captures canvas frames; HTML retains animation. WebGL capture depends on a readable drawing buffer.
+atelier cannot infer arbitrary component state. Custom filters and slide selection require the export state methods. A presentation PDF captures the current slide. PDF captures canvas frames; HTML retains animation. WebGL capture depends on a readable drawing buffer.
 
-Text remains selectable in PDF where the renderer supports it. Recipient viewport sizes and PDF pagination can change the layout. Exports omit Atelier's review controls.
+Text remains selectable in PDF where the renderer supports it. Recipient viewport sizes and PDF pagination can change the layout. Exports omit atelier's review controls.
 
 ## Agent interfaces
 
@@ -230,7 +230,7 @@ Screenshots are stored locally with the artifact. A check for an older revision 
 
 ### Preview checks
 
-Create, revise, restore, and duplicate responses include a `preview` result. Atelier opens the saved revision in the real workspace using Chromium, waits for readiness, and reports runtime errors, console errors, failed requests, and horizontal overflow. It simulates app-data writes so the check cannot change saved data.
+Create, revise, restore, and duplicate responses include a `preview` result. atelier opens the saved revision in the real workspace using Chromium, waits for readiness, and reports runtime errors, console errors, failed requests, and horizontal overflow. It simulates app-data writes so the check cannot change saved data.
 
 `preview.status` is `passed`, `failed`, or `unavailable`. Missing Chromium or a busy checker produces `unavailable`; install the browser with `atelier install-browser` or retry. The revision is already saved regardless of check status. Fix errors by revising the same artifact, not by repeating its creation.
 
@@ -308,6 +308,7 @@ Paths are relative to `/api`. Request and response bodies use JSON, except expor
 | GET | `/artifacts/:id/revisions` | List revision metadata |
 | POST | `/artifacts/:id/revisions` | Create a revision |
 | GET | `/artifacts/:id/revisions/:n` | Read complete revision content |
+| GET | `/artifacts/:id/revisions/:n/preview` | Read `{html}` for the workspace sandbox |
 | POST | `/artifacts/:id/restore` | Restore a revision |
 | POST | `/artifacts/:id/duplicate` | Duplicate a revision |
 | GET | `/artifacts/:id/comments` | List comments |
@@ -354,8 +355,8 @@ Browser tests use separate ports and `.atelier/test` data. Screenshots and failu
 
 ## Execution limits
 
-Atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
+atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
 
-Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Preview URLs only run when embedded by the workspace. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, filesystem loads are limited to the declared dependency graph, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated and only accepted while the user is selecting a detail.
+Generated code runs in a sandboxed inline iframe without same-origin privileges. The workspace blocks all frame navigation, including navigation to other artifacts. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Rendered previews are delivered as JSON through the API and placed into the sandbox by the workspace; raw preview URLs cannot execute. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, filesystem loads are limited to the declared dependency graph, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated and only accepted while the user is selecting a detail.
 
-The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. Atelier is not a security boundary between users of the computer.
+The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. atelier is not a security boundary between users of the computer.

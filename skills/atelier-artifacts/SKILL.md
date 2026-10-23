@@ -1,24 +1,24 @@
 ---
 name: atelier-artifacts
-description: Create and revise interactive pages in Atelier through its MCP tools, including changes requested in artifact comments. Use when the user wants an Atelier artifact, dashboard, report, diagram, or interactive explanation. Not for developing the Atelier service itself or building an unrelated website.
+description: Create and revise interactive pages in atelier through its MCP tools, including changes requested in artifact comments. Use when the user wants an atelier artifact, dashboard, report, diagram, or interactive explanation. Not for developing the atelier service itself or building an unrelated website.
 ---
 
-# Atelier artifacts
+# atelier artifacts
 
 Make the document the user asked for. One artifact can mix prose, diagrams, charts, images, forms, and animation; there are no required templates or sections. The agent authors the artifact. The human views it, comments, and shares it.
 
 ## Choose the format
 
 - Use React for linked charts, filters, reusable components, or substantial interactive state. The entry file must default-export a component.
-- Use HTML for a document with custom styling and lighter interactions. Write a page fragment with optional style and script tags. Atelier supplies the document shell, runtime, and security policy. Full documents also work. Put code that accesses an element after its markup, or wait for the DOM.
+- Use HTML for a document with custom styling and lighter interactions. Write a page fragment with optional style and script tags. atelier supplies the document shell, runtime, and security policy. Full documents also work. Put code that accesses an element after its markup, or wait for the DOM.
 - Use Markdown for prose, tables, math, and Mermaid fences when custom layout or controls are unnecessary.
 - Use SVG for a self-contained vector illustration or diagram.
 
-Respect an existing artifact's format unless the requested change needs another. Do not reproduce Atelier's header, review buttons, comment UI, or library inside the artifact. Design for the available viewport; exports have no workspace controls.
+Respect an existing artifact's format unless the requested change needs another. Do not reproduce atelier's header, review buttons, comment UI, or library inside the artifact. Design for the available viewport; exports have no workspace controls.
 
 ## Create or revise through the tools
 
-Use the connected Atelier MCP tools. Tool names may have a client-specific server prefix; inspect their schemas rather than assuming argument shapes. The local Atelier service must be running. The skill does not install or connect it.
+Use the connected atelier MCP tools. Tool names may have a client-specific server prefix; inspect their schemas rather than assuming argument shapes. The local atelier service must be running. The skill does not install or connect it.
 
 For new work, call `create_artifact` with a descriptive title, your agent name as `author`, and exactly one source form: inline `content` (`kind`, `entry`, `files`), an absolute `filePath`, or a `filePaths` map from artifact-relative names to absolute local paths with `entry` and optional `kind`. Prefer path inputs for files already on disk, especially large pages; do not repeat their contents in a tool call. Paths are relative to the artifact; `entry` must exist in `files`. Inline file contents are strings; the path loader encodes image and font binaries as data URLs. Paths are read on the MCP host. Include every required local asset.
 
@@ -38,7 +38,7 @@ Code runs in an isolated browser, without host filesystem access or arbitrary pa
 
 React can import `react`, `react-dom`, `recharts`, `d3`, `lucide-react`, `pele`, `mermaid`, and `katex`, plus local files. Prefer Pele for Mermaid diagrams. Markdown Mermaid fences render automatically; in React, clean up Pele's `mount()` handle when the component unmounts.
 
-HTML can declare scripts from `cdnjs.cloudflare.com`, `cdn.jsdelivr.net/npm/`, `unpkg.com`, `cdn.tailwindcss.com`, and `code.jquery.com`. Use an exact version published at least 14 days ago and an explicit JavaScript file; Tailwind uses `/VERSION`. Atelier verifies the date and embeds that file. Unknown dates, version ranges, unversioned URLs, query parameters, and redirects are rejected. Choose a self-contained browser build: additional scripts, workers, font files, map tiles, or API data fetched by a library are blocked.
+HTML can declare scripts from `cdnjs.cloudflare.com`, `cdn.jsdelivr.net/npm/`, `unpkg.com`, `cdn.tailwindcss.com`, and `code.jquery.com`. Use an exact version published at least 14 days ago and an explicit JavaScript file; Tailwind uses `/VERSION`. atelier verifies the date and embeds that file. Unknown dates, version ranges, unversioned URLs, query parameters, and redirects are rejected. Choose a self-contained browser build: additional scripts, workers, font files, map tiles, or API data fetched by a library are blocked.
 
 External stylesheets are limited to Google Fonts (`fonts.googleapis.com`, with font files from `fonts.gstatic.com`). Inline and artifact-local CSS work. Google Fonts need internet access in shared HTML; use system fonts or embedded fonts for offline fidelity. Images must be embedded data URLs or included files, not remote URLs. Video and embedded external pages are out of scope. External navigation is blocked; use in-page links for document navigation.
 
@@ -54,7 +54,7 @@ Use `window.atelier.getData()` and `setData(value)` for persistent JSON app data
 
 Use `getState()` to initialize UI state from an export snapshot and `setState(value)` to register the current serializable UI state. `setState` does not save to the database. Browser exports capture ordinary form values automatically; charts and custom controls should register the state needed to reproduce what the user sees.
 
-HTML exports retain supported interactions. PDF exports are static, use print CSS and pagination, and cannot show a click-through sequence. When PDF matters, make important content visible in print, hide purely interactive controls, and avoid fixed-height containers that clip it. Neither export includes Atelier's review controls.
+HTML exports retain supported interactions. PDF exports are static, use print CSS and pagination, and cannot show a click-through sequence. When PDF matters, make important content visible in print, hide purely interactive controls, and avoid fixed-height containers that clip it. Neither export includes atelier's review controls.
 
 Read [examples.md](references/examples.md) when you need a content payload, HTML interaction, React state, diagram lifecycle, or print pattern. Adapt the patterns; they are not templates to impose on every artifact.
 

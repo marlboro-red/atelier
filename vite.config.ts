@@ -8,12 +8,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     headers: {
-      "Content-Security-Policy": workspacePolicy(
-        Number(
-          process.env.ATELIER_PREVIEW_PORT ??
-            Number(process.env.ATELIER_PORT ?? 4310) + 1,
-        ),
-      ),
+      "Content-Security-Policy": workspacePolicy(),
     },
     proxy: { "/api": "http://127.0.0.1:4310" },
   },

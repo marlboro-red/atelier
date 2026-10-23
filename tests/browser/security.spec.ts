@@ -61,7 +61,7 @@ for (const [method, code] of Object.entries(escapeAttempts)) {
       } else {
         const workspace = await page.goto("/a/" + artifact.id);
         expect(workspace!.headers()["content-security-policy"]).toContain(
-          "frame-src http://127.0.0.1:14311/preview/",
+          "frame-src 'none'",
         );
       }
       const parentUrl = page.url();
@@ -104,8 +104,14 @@ test("preview endpoints cannot execute artifacts as top-level documents", async 
   );
   expect(preview!.status()).toBe(403);
   await expect(
-    page.getByText("Open this artifact through the Atelier workspace."),
+    page.getByText("Open this artifact through the atelier workspace."),
   ).toBeVisible();
+  expect(requests).toEqual([]);
+  const document = await page.goto(
+    `/api/artifacts/${artifact.id}/revisions/1/preview`,
+  );
+  expect(document!.headers()["content-type"]).toContain("application/json");
+  expect(document!.headers()["x-content-type-options"]).toBe("nosniff");
   expect(requests).toEqual([]);
 });
 
@@ -246,6 +252,66 @@ test("malformed artifact messages cannot crash the workspace or forge a selectio
   });
   await frame.locator("h1").click();
   await expect(page.locator(".selected-quote")).toContainText("Safe heading");
+  await expect(
+    page.getByRole("banner", { name: "Artifact toolbar" }),
+  ).toBeVisible();
+});
+
+test("an artifact cannot navigate to another preview and copy its saved data", async ({
+  page,
+  request,
+}) => {
+  const victimResponse = await request.post("/api/artifacts", {
+    data: {
+      title: "Private state fixture",
+      content: {
+        kind: "html",
+        entry: "index.html",
+        files: {
+          "index.html":
+            "<h1>Private state</h1><script>atelier.getData().then(data=>atelier.setData(data))</script>",
+        },
+      },
+    },
+  });
+  const victim = await victimResponse.json();
+  await request.put(`/api/artifacts/${victim.id}/data`, {
+    data: { data: { secret: "CROSS_ARTIFACT_CANARY" } },
+  });
+  const attackerResponse = await request.post("/api/artifacts", {
+    data: {
+      title: "Navigation fixture",
+      content: {
+        kind: "html",
+        entry: "index.html",
+        files: {
+          "index.html": `<button onclick="location.href='http://127.0.0.1:14311/preview/${victim.id}/1'">Switch preview</button>`,
+        },
+      },
+    },
+  });
+  const attacker = await attackerResponse.json();
+  const previewRequests: string[] = [];
+  await page.route("**/preview/**", async (route) => {
+    previewRequests.push(route.request().url());
+    await route.abort();
+  });
+  const violations: string[] = [];
+  page.on("console", (message) => {
+    if (/Content Security Policy/i.test(message.text()))
+      violations.push(message.text());
+  });
+  await page.goto("/a/" + attacker.id);
+  await page
+    .frameLocator("iframe")
+    .getByRole("button", { name: "Switch preview" })
+    .click();
+  await expect.poll(() => violations.length).toBeGreaterThan(0);
+  expect(previewRequests).toEqual([]);
+  expect(
+    (await (await request.get(`/api/artifacts/${attacker.id}/data`)).json())
+      .data,
+  ).toBeNull();
   await expect(
     page.getByRole("banner", { name: "Artifact toolbar" }),
   ).toBeVisible();

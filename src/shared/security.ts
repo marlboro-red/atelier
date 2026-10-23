@@ -4,6 +4,6 @@ export const artifactPolicy =
 
 // This must be enforced by the embedding document: the child's own frame-src
 // directive does not restrict its self-navigation.
-export function workspacePolicy(previewPort: number) {
-  return `frame-src http://127.0.0.1:${previewPort}/preview/; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`;
+export function workspacePolicy() {
+  return "frame-src 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 }
