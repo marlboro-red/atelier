@@ -7,12 +7,14 @@
     "atelier": "./bin/atelier.mjs"
   },
   "scripts": {
-    "dev": "tsx src/server/index.ts",
+    "dev": "tsx watch src/server/index.ts",
     "start": "tsx src/server/index.ts",
     "build": "tsc --noEmit && vite build",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write src tests *.ts *.json bin/*.mjs",
+    "format:check": "prettier --check src tests *.ts *.json bin/*.mjs"
   },
   "engines": {
     "node": ">=22.13"
@@ -43,6 +45,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/sanitize-html": "^2.16.2",
     "@vitejs/plugin-react": "^6.1.2",
+    "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
