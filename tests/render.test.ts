@@ -42,3 +42,44 @@ test("rejects dependency and filesystem escapes", async () => {
       /Unsupported dependency|Missing artifact/,
     );
 });
+
+test("renders Mermaid fences with Pele while preserving ordinary code and math", async () => {
+  const html = await render(
+    {
+      kind: "markdown",
+      entry: "report.md",
+      files: {
+        "report.md":
+          '# Report\n\n```mermaid\nflowchart LR\n A["Cost $5"] --> B[Output]\n```\n\n```js\nconst price = "$5";\n```\n\n$$x^2$$\n\n```mermaid\nsequenceDiagram\n Alice->>Bob: Hello\n```',
+      },
+    },
+    { id: "test", revision: 1 },
+  );
+  assert.match(html, /class="pele pele-flowchart/);
+  assert.match(html, /pele-sequence/);
+  assert.match(html, /Cost \$5/);
+  assert.match(html, /<pre><code>/);
+  assert.match(html, /const price = "\$5"/);
+  assert.match(html, /katex/);
+  assert.equal(
+    (html.match(/<figure class="mermaid-diagram">/g) ?? []).length,
+    2,
+  );
+  assert.doesNotMatch(html, /ATELIER(?:CODE|DIAGRAM)[a-f0-9]+TOKEN/);
+});
+
+test("Pele diagram text cannot inject HTML scripts", async () => {
+  const html = await render(
+    {
+      kind: "markdown",
+      entry: "report.md",
+      files: {
+        "report.md":
+          '```mermaid\nflowchart LR\n A["<script>alert(1)</script>"] --> B[Safe]\n```',
+      },
+    },
+    { id: "test", revision: 1 },
+  );
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  assert.match(html, /pele-flowchart/);
+});

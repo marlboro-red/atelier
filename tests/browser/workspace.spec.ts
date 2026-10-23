@@ -279,3 +279,51 @@ test("text, charts, diagrams, and animation coexist in one artifact", async ({
     fullPage: true,
   });
 });
+
+test("Pele diagrams work in React, Markdown, and offline HTML exports", async ({
+  page,
+  request,
+}) => {
+  const content: Content = {
+    kind: "react",
+    entry: "App.tsx",
+    files: {
+      "App.tsx": `import React,{useEffect,useRef} from 'react';import {mount} from 'pele';export default function App(){const ref=useRef(null);useEffect(()=>{const diagram=mount(ref.current,'flowchart LR; A[Input] --> B[Output]');return()=>diagram.destroy()},[]);return <main style={{padding:24}}><h1>Pele diagram</h1><div ref={ref} style={{'--pele-surface':'#e3eed6'}}/></main>}`,
+    },
+  };
+  const a = await create(request, "Pele integration", content);
+  await page.goto("/a/" + a.id);
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator("svg.pele")).toBeVisible();
+  await expect(frame.locator("svg.pele")).toContainText("Input");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(frame.locator("svg.pele")).toBeVisible();
+  expect(
+    await frame.locator("body").evaluate((el) => el.scrollWidth > innerWidth),
+  ).toBe(false);
+  const htmlResponse = await request.post(`/api/artifacts/${a.id}/export`, {
+    data: { revision: 1, format: "html" },
+  });
+  expect(htmlResponse.ok()).toBe(true);
+  const standalone = await page.context().newPage();
+  await standalone.route("**/*", (route) => route.abort());
+  await standalone.setContent(await htmlResponse.text());
+  await expect(standalone.locator("svg.pele")).toBeVisible();
+  await standalone.close();
+  const md = await create(request, "Markdown with diagrams", {
+    kind: "markdown",
+    entry: "report.md",
+    files: {
+      "report.md":
+        "# Two diagrams\n\n```mermaid\nflowchart LR\n A[First] --> B[Second]\n```\n\n```mermaid\nsequenceDiagram\n Alice->>Bob: Hello\n```",
+    },
+  });
+  await page.goto("/a/" + md.id);
+  await expect(frame.locator("svg.pele")).toHaveCount(2);
+  await expect(frame.locator("svg.pele").first()).toBeVisible();
+  const pdf = await request.post(`/api/artifacts/${md.id}/export`, {
+    data: { revision: 1, format: "pdf" },
+  });
+  expect(pdf.ok()).toBe(true);
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+});

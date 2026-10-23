@@ -178,7 +178,7 @@ program
       { name: "atelier", version: "0.1.0" },
       {
         instructions:
-          "Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the browser viewport, without required workspace headers or sidebars. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Use curated browser dependencies only. The React entry must default-export a component. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.",
+          'Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the browser viewport, without required workspace headers or sidebars. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Prefer Pele for Mermaid diagrams: import { mount } from "pele" in React effects and call the returned handle.destroy() on cleanup; theme with --pele-* CSS variables. Markdown mermaid code fences render with Pele automatically. Existing mermaid imports remain supported for compatibility. Use curated browser dependencies only. The React entry must default-export a component. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.',
       },
     );
     const tool = (
@@ -228,7 +228,7 @@ program
     );
     tool(
       "create_artifact",
-      "Create a standalone page; freely mix text, diagrams, charts, images, and animation using React or HTML. No templates required. Available packages: react, react-dom, recharts, d3, lucide-react, mermaid, katex.",
+      "Create a standalone page; freely mix text, diagrams, charts, images, and animation using React or HTML. No templates required. Available packages: react, react-dom, recharts, d3, lucide-react, pele (preferred for Mermaid syntax), mermaid (legacy compatibility), katex.",
       {
         title: z.string(),
         description: z.string().optional(),

@@ -41,7 +41,7 @@ Review overlays do not resize or remount the artifact, so chart filters, animati
 
 The root page is a library of agent-created artifacts. It updates as agents publish work; it has no create, import, edit, restore, or duplicate actions. All authoring happens through MCP, CLI, or the HTTP API. Agents can restore old revisions and duplicate artifacts through MCP.
 
-React and HTML are general-purpose rendering formats, not categories: one artifact may combine all supported visual content and multiple source files. Markdown and SVG are simpler optional formats. The renderer supports Recharts, D3, Mermaid, KaTeX, SVG, canvas, and browser WebGL APIs. Example compositions live only in test fixtures; they do not restrict agent output.
+React and HTML are general-purpose rendering formats, not categories: one artifact may combine all supported visual content and multiple source files. Markdown and SVG are simpler optional formats. The renderer supports Recharts, D3, Pele for Mermaid syntax, KaTeX, SVG, canvas, and browser WebGL APIs. Example compositions live only in test fixtures; they do not restrict agent output.
 
 An artifact keeps one stable ID: `/a/<id>`. Historical links use `/a/<id>/revisions/<number>`. Updates include `baseRevision`; stale updates return HTTP 409, and agents must reconcile them.
 
@@ -123,9 +123,33 @@ Create body: `{title, description?, author?, summary?, content}`. Revision body:
 }
 ```
 
-Kinds: `react`, `html`, `markdown`, `svg`. React entries default-export a component. Relative imports can reference other files in the manifest. Available packages: `react`, `react-dom`, `recharts`, `d3`, `lucide-react`, `mermaid`, and `katex`. CSS imports are supported. Dependency versions are pinned by this installation's lockfile; upgrades can change rendering and should be tested against existing artifacts.
+Kinds: `react`, `html`, `markdown`, `svg`. React entries default-export a component. Relative imports can reference other files in the manifest. Available packages: `react`, `react-dom`, `recharts`, `d3`, `lucide-react`, `pele`, `mermaid` (compatibility), and `katex`. CSS imports are supported. Dependency versions are pinned by this installation's lockfile; upgrades can change rendering and should be tested against existing artifacts.
 
 HTML can include inline scripts and local script/style references from its `files`. Images should be data URLs, or included as SVG text / image data URLs in `files` and referenced by relative path. React can import those files as strings. External network assets, arbitrary npm installation, server-side execution, and video are outside this version's scope. Browser previews disallow network requests and embedded frames.
+
+### Mermaid diagrams with Pele
+
+[Pele](https://github.com/obsidianmd/pele) is the preferred renderer for Mermaid syntax. It produces SVG synchronously and supports CSS-variable themes. The original `mermaid` package remains available so older artifacts and revisions retain their renderer.
+
+Markdown artifacts render fenced `mermaid` blocks into SVG automatically, including in HTML and PDF exports. Ordinary code blocks stay code. Invalid diagram syntax produces a preview error that can be sent to the agent.
+
+For React, use Pele's responsive mount API:
+
+```jsx
+import { useEffect, useRef } from "react";
+import { mount } from "pele";
+
+function Diagram({ source }) {
+  const container = useRef(null);
+  useEffect(() => {
+    const diagram = mount(container.current, source);
+    return () => diagram.destroy();
+  }, [source]);
+  return <div ref={container} />;
+}
+```
+
+Set `--pele-fg`, `--pele-bg`, `--pele-surface`, `--pele-border`, and `--pele-line` on the container to match the artifact. `pele/core` and `pele/diagrams/<type>` imports allow narrower bundles. Pele targets Mermaid syntax but has its own layout and visual styling; it is not a pixel-identical replacement for Mermaid.js. All package code is bundled locally for offline export.
 
 ### Persistent data and export state
 

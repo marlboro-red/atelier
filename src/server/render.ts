@@ -2,7 +2,9 @@ import { build } from "esbuild";
 import { posix } from "node:path";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
-import { marked } from "marked";
+import { Marked } from "marked";
+import { render as renderDiagram } from "pele";
+import { randomUUID } from "node:crypto";
 import sanitize from "sanitize-html";
 import katex from "katex";
 import type { Content } from "../shared/schema.js";
@@ -14,6 +16,7 @@ const allowed = new Set([
   "d3",
   "lucide-react",
   "mermaid",
+  "pele",
   "katex",
 ]);
 const escape = (s: string) => s.replace(/</g, "\\u003c");
@@ -344,7 +347,33 @@ export async function render(
     styles = out.css;
   } else if (content.kind === "markdown") {
     const math: string[] = [];
-    const prepared = source.replace(
+    const diagrams: string[] = [];
+    const marker = `ATELIERDIAGRAM${randomUUID().replaceAll("-", "")}TOKEN`;
+    const markdownParser = new Marked({
+      renderer: {
+        code(token) {
+          if (token.lang?.trim().split(/\s+/)[0] !== "mermaid") return false;
+          const index = diagrams.length;
+          const { svg } = renderDiagram(token.text, {
+            idPrefix: `diagram-${index}`,
+            linkSchemes: [],
+          });
+          diagrams.push(`<figure class="mermaid-diagram">${svg}</figure>`);
+          return `${marker}${index}END`;
+        },
+      },
+    });
+    // Keep math processing out of fenced/indented code, including Mermaid source.
+    const codeBlocks: string[] = [];
+    const codeMarker = `ATELIERCODE${randomUUID().replaceAll("-", "")}TOKEN`;
+    let prose = source;
+    markdownParser.walkTokens(markdownParser.lexer(source), (token) => {
+      if (token.type === "code" && prose.includes(token.raw)) {
+        const index = codeBlocks.push(token.raw) - 1;
+        prose = prose.replace(token.raw, `${codeMarker}${index}END\n`);
+      }
+    });
+    const prepared = prose.replace(
       /\$\$([\s\S]+?)\$\$|\$([^\n$]+?)\$/g,
       (_, block, inline) => {
         const token = `ATELIERMATHTOKEN${math.length}END`;
@@ -365,7 +394,11 @@ export async function render(
         return `![${alt}](${file.startsWith("data:") ? file : "data:image/svg+xml;base64," + Buffer.from(file).toString("base64")})`;
       },
     );
-    body = sanitize(await marked.parse(markdown), {
+    const restored = markdown.replace(
+      new RegExp(`${codeMarker}(\\d+)END\n`, "g"),
+      (_, index) => codeBlocks[Number(index)],
+    );
+    body = sanitize(await markdownParser.parse(restored), {
       allowedTags: sanitize.defaults.allowedTags.concat(["img"]),
       allowedAttributes: {
         ...sanitize.defaults.allowedAttributes,
@@ -374,8 +407,14 @@ export async function render(
       allowedSchemes: ["data"],
     });
     body = body.replace(/ATELIERMATHTOKEN(\d+)END/g, (_, n) => math[Number(n)]);
+    body = body.replace(
+      new RegExp(`${marker}(\\d+)END`, "g"),
+      (_, index) => diagrams[Number(index)],
+    );
     body = '<article class="document">' + body + "</article>";
-    styles = css;
+    styles =
+      css +
+      ".mermaid-diagram{margin:24px 0;overflow:auto}.mermaid-diagram .pele{display:block;max-width:100%;height:auto;margin:auto;--pele-font:system-ui,sans-serif}";
   } else if (content.kind === "svg") {
     body = source;
   } else {
