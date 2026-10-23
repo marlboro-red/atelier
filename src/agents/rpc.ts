@@ -1,6 +1,15 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 
+export function nativeAgentEnvironment() {
+  const env = { ...process.env };
+  // A nested agent must discover its own identity, not inherit its launcher's.
+  delete env.CODEX_THREAD_ID;
+  delete env.CODEX_SESSION_ID;
+  delete env.CODEX_TOOL_CALL_ID;
+  return env;
+}
+
 /** Both app-server and ACP use JSON messages delimited by newlines. */
 export class AgentRpc extends EventEmitter {
   child: ChildProcessWithoutNullStreams;
@@ -27,6 +36,7 @@ export class AgentRpc extends EventEmitter {
     super();
     this.child = spawn(command, args, {
       cwd,
+      env: nativeAgentEnvironment(),
       stdio: "pipe",
       shell: false,
       detached: process.platform !== "win32",

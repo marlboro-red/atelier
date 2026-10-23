@@ -1,32 +1,34 @@
 # Handle comments automatically
 
-Connect an open Codex conversation to an artifact, or start a creator session through atelier. Keep atelier and the agent terminal open.
+Leave a comment in atelier and receive the response in your existing agent conversation. Keep atelier and the agent open.
 
-## Create with automatic feedback
+## Connect Codex
 
-Install and sign in to the CLI you want to use. From the directory the agent should work in, run one of these commands:
+For new artifacts, atelier's MCP guidance tells Codex to connect its own conversation during creation. The agent supplies its identity; you do not need to find a session ID or run a watcher command. **Comments** shows whether the connection succeeded.
+
+For an existing artifact, or if the agent could not connect:
+
+1. Open **Comments → Connect an agent**.
+2. Choose **Codex**.
+3. Find your conversation by its name and project.
+4. Click **Connect**.
+
+atelier forwards comments while its local service runs. No extra terminal is needed. If no conversations appear, open the conversation in Codex and click **Refresh conversations**. The picker shows conversations loaded on Codex's shared local server, not saved conversations that are closed.
+
+The original Codex client handles approvals and keeps its model, permissions, and MCP configuration. It needs atelier's MCP tools connected to the same atelier service. **Disconnect** stops new forwarding without closing Codex or cancelling messages already queued there.
+
+After restarting atelier, reconnect from the picker. Comments stay in the durable queue. The service does not guess which conversation should receive them.
+
+## Connect Claude Code or Copilot
+
+Choose the agent under **Comments → Connect an agent** and copy its command. These clients still use the terminal connection described below.
 
 ```sh
-atelier agent "Create a report with a chart" --agent codex --cwd .
-atelier agent "Create a report with a chart" --agent copilot --cwd .
-atelier agent "Create a report with a chart" --agent claude --cwd .
-```
-
-Replace the quoted request with your task. Codex and Copilot print their session ID, create the artifact, and stay open for comments. Claude opens its interactive CLI. New artifacts and duplicates created through the session's MCP connection join that same session automatically. Multiple artifacts share one session, with feedback handled one turn at a time.
-
-Open the returned artifact URL and leave a comment. **Comments** shows the connected agent. The creation tool also reports `feedback.connected`. If the connection fails, the artifact is still saved and the result explains the failure. Set `watch: false` in `create_artifact` to leave an artifact disconnected.
-
-A plain MCP creation does not identify which conversation should receive feedback. Connect an existing Codex session by its UUID, or use a creator session. atelier does not guess the target conversation or start a second agent after creation. Use `atelier agent` when you want automatic feedback from the start. No command changes your global MCP configuration.
-
-## Connect an existing artifact
-
-```sh
-atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
 atelier watch ARTIFACT_ID --agent copilot --cwd .
 atelier watch ARTIFACT_ID --agent claude --cwd .
 ```
 
-Replace `ARTIFACT_ID` with the ID at the end of the artifact's URL. In the viewer, **Comments → Connect an agent** copies the command with the ID filled in.
+Replace `ARTIFACT_ID` with the ID at the end of the artifact's URL.
 
 ### Claude Code
 
@@ -36,9 +38,9 @@ Use the interactive terminal. Claude ignores the development-channel flag in `-p
 
 See the [Claude Code Channels reference](https://code.claude.com/docs/en/channels-reference).
 
-### Keep an existing Codex conversation open
+## Advanced Codex connection
 
-Keep your Codex conversation open and copy its session UUID. The session must already have atelier's MCP tools connected to the same atelier service. In another terminal, run:
+For a custom socket or terminal-controlled connection, use the session UUID:
 
 ```sh
 atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
@@ -50,9 +52,15 @@ Use a Codex version with `codex queue` and the shared local app server. A sessio
 
 For this connection, a delivered event means Codex accepted the message into its queue. Check the original conversation and artifact for completion. **Disconnect** stops further forwarding. It does not cancel messages already queued in Codex or stop your conversation.
 
-If you intentionally want a separate Codex conversation, use `--new-session` instead of `--session`. `atelier agent` also starts a new creator session. See the [Codex queue reference](https://learn.chatgpt.com/docs/cli/reference) and [app-server documentation](https://learn.chatgpt.com/docs/app-server).
+If you intentionally want a separate Codex conversation, use `--new-session` instead of `--session`. `atelier agent` starts a new creator session when that is what you want:
 
-### Resume a Copilot or Claude session
+```sh
+atelier agent "Create a report with a chart" --agent codex --cwd .
+```
+
+The same command accepts `--agent copilot` or `--agent claude`. New artifacts created through these managed sessions connect automatically. See the [Codex queue reference](https://learn.chatgpt.com/docs/cli/reference) and [app-server documentation](https://learn.chatgpt.com/docs/app-server).
+
+## Resume a Copilot or Claude session
 
 Copilot uses ACP over stdio. To resume a saved session, add its ID:
 
@@ -89,3 +97,11 @@ Managed Codex sessions use a read-only filesystem sandbox and request approval f
 Claude retains its own terminal permissions. The channel does not relay approvals through artifact comments. Comment text remains task data, not permission to run unrelated commands or access unrelated files.
 
 Only one active delivery connection can own an artifact's queue. Events are recorded before dispatch, grouped in batches of up to 50, and acknowledged by event ID. New feedback arriving during a managed turn waits for the next turn. Revision conflict checks still apply.
+
+## Agent integration
+
+For MCP creation in Codex, read `CODEX_THREAD_ID` from the agent's shell environment and pass it as `feedbackSession` to `create_artifact`. Use only the current conversation's identity. MCP startup environments do not reliably identify their calling thread, so atelier does not infer the target from the MCP process environment.
+
+For an existing artifact, an agent can run `atelier connect ARTIFACT_ID` from its own Codex shell. The command reads `CODEX_THREAD_ID` and hands the connection to the local service before exiting. CLI creation from a Codex shell does this by default; `--no-watch` disables it. MCP creation accepts `watch: false` for the same purpose.
+
+A failed connection does not undo a publication. Check `feedback.connected` in the result. If the current identity or local server is unavailable, direct the user to the conversation picker instead of guessing another session.

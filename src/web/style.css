@@ -1338,3 +1338,42 @@ button svg {
   box-sizing: border-box;
   margin-top: 4px;
 }
+
+.conversation-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.conversation-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  background: #f2f4ee;
+  border: 1px solid #e0e5d9;
+  border-radius: 6px;
+}
+.conversation-option > div {
+  min-width: 0;
+}
+.conversation-option strong {
+  display: block;
+  color: #394831;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.conversation-option small {
+  display: block;
+  color: #7b8573;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-option button {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  background: #687c59;
+  color: white;
+  border-radius: 4px;
+}

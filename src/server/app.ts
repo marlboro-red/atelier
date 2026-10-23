@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { AgentConnections, localAgents } from "./agent-connections.js";
 import { Feedback } from "./feedback.js";
 import { z } from "zod";
 import { EventEmitter } from "node:events";
@@ -13,14 +14,24 @@ import { RenderPool } from "./render-pool.js";
 import { checkPreview, type PreviewCheck } from "./check.js";
 import { renderPdf } from "./pdf.js";
 import { workspacePolicy } from "../shared/security.js";
-export function createApp(store: Store, previewPort = 4311) {
+export function createApp(
+  store: Store,
+  previewPort = 4311,
+  agents = localAgents,
+) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
   const renderer = new RenderPool();
   const feedback = new Feedback(store);
   const events = new EventEmitter();
   events.setMaxListeners(100);
   const streams = new Set<ServerResponse>();
+  const connections = new AgentConnections(
+    feedback,
+    (id) => events.emit("change", { id }),
+    agents,
+  );
   app.addHook("preClose", async () => {
+    await connections.close();
     renderer.close();
     for (const stream of streams) stream.end();
   });
@@ -125,6 +136,7 @@ export function createApp(store: Store, previewPort = 4311) {
       .object({ baseRevision: z.number().int().positive() })
       .parse(req.body);
     store.remove(id, baseRevision);
+    await connections.stop(id);
     changed(id);
     return { deleted: true, id };
   });
@@ -286,6 +298,24 @@ export function createApp(store: Store, previewPort = 4311) {
     store.setData(params(req).id, body.data);
     return { ok: true };
   });
+  app.get("/api/agents/codex/sessions", async (_req, reply) => {
+    reply.header("Cache-Control", "no-store");
+    try {
+      return await connections.list();
+    } catch {
+      throw new HttpError(
+        503,
+        "Open Codex to connect a conversation, then refresh this list.",
+      );
+    }
+  });
+  app.post("/api/artifacts/:id/feedback/codex", async (req) => {
+    const input = z
+      .object({ session: z.string().uuid() })
+      .strict()
+      .parse(req.body);
+    return connections.connect(params(req).id, input.session);
+  });
   app.get("/api/artifacts/:id/feedback", async (req) =>
     feedback.status(params(req).id),
   );
@@ -344,6 +374,7 @@ export function createApp(store: Store, previewPort = 4311) {
       .object({ token: z.string().uuid().optional() })
       .parse(req.body);
     const result = feedback.disconnect(params(req).id, input.token);
+    await connections.stop(params(req).id);
     changed(params(req).id);
     return result;
   });

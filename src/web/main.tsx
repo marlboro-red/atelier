@@ -65,12 +65,27 @@ function App() {
   } | null>(null);
   const [sending, setSending] = useState(false);
   const [connectionProvider, setConnectionProvider] = useState("codex");
-  const [connectionSession, setConnectionSession] = useState("");
-  const validConnectionSession =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      connectionSession,
-    );
-  const connectionCommand = `atelier watch ${artifact?.id ?? "ARTIFACT_ID"} --agent ${connectionProvider} --cwd .${connectionProvider === "codex" ? ` --session ${validConnectionSession ? connectionSession : "SESSION_ID"}` : ""}`;
+  const [openSessions, setOpenSessions] = useState<
+    { id: string; title: string; project: string; state: string }[]
+  >([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState("");
+  const [connectingSession, setConnectingSession] = useState<string | null>(
+    null,
+  );
+  async function loadSessions() {
+    setSessionsLoading(true);
+    setSessionsError("");
+    try {
+      setOpenSessions(await api("/agents/codex/sessions"));
+    } catch (error) {
+      setOpenSessions([]);
+      setSessionsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSessionsLoading(false);
+    }
+  }
+  const connectionCommand = `atelier watch ${artifact?.id ?? "ARTIFACT_ID"} --agent ${connectionProvider} --cwd .`;
   useEffect(() => {
     if (!locationState.id) {
       setFeedback(null);
@@ -904,20 +919,26 @@ function App() {
                         )}
                       </div>
                       {!feedback?.connected && (
-                        <details className="agent-connect">
+                        <details
+                          className="agent-connect"
+                          onToggle={(event) => {
+                            if (
+                              event.currentTarget.open &&
+                              connectionProvider === "codex"
+                            )
+                              void loadSessions();
+                          }}
+                        >
                           <summary>Connect an agent</summary>
-                          <p>
-                            {connectionProvider === "codex"
-                              ? "Keep your Codex conversation open. Enter its session UUID, then run this command in another terminal."
-                              : "Run this command in the agent's working directory. Keep the terminal open."}
-                          </p>
                           <label>
                             Agent{" "}
                             <select
                               value={connectionProvider}
-                              onChange={(event) =>
-                                setConnectionProvider(event.target.value)
-                              }
+                              onChange={(event) => {
+                                setConnectionProvider(event.target.value);
+                                if (event.target.value === "codex")
+                                  void loadSessions();
+                              }}
                             >
                               <option value="codex">Codex</option>
                               <option value="claude">Claude Code</option>
@@ -926,39 +947,111 @@ function App() {
                               </option>
                             </select>
                           </label>
-                          {connectionProvider === "codex" && (
-                            <label>
-                              Codex session UUID
-                              <input
-                                aria-label="Codex session UUID"
-                                placeholder="Session UUID from Codex"
-                                value={connectionSession}
-                                maxLength={36}
-                                onChange={(event) =>
-                                  setConnectionSession(
-                                    event.target.value.trim(),
-                                  )
+                          {connectionProvider === "codex" ? (
+                            <>
+                              <p>
+                                Choose the conversation that should receive your
+                                comments. Keep Codex open.
+                              </p>
+                              {sessionsLoading && (
+                                <p role="status">
+                                  Looking for open conversations…
+                                </p>
+                              )}
+                              {sessionsError && (
+                                <p role="alert">{sessionsError}</p>
+                              )}
+                              {!sessionsLoading &&
+                                !sessionsError &&
+                                !openSessions.length && (
+                                  <p>
+                                    No open conversations. Open your
+                                    conversation in Codex, then refresh.
+                                  </p>
+                                )}
+                              <div className="conversation-list">
+                                {openSessions.map((session) => (
+                                  <div
+                                    className="conversation-option"
+                                    key={session.id}
+                                  >
+                                    <div>
+                                      <strong>{session.title}</strong>
+                                      <small title={session.project}>
+                                        {session.project
+                                          .split(/[\\/]/)
+                                          .filter(Boolean)
+                                          .slice(-2)
+                                          .join("/") || "No project"}{" "}
+                                        ·{" "}
+                                        {session.state === "active"
+                                          ? "Working"
+                                          : "Ready"}
+                                      </small>
+                                    </div>
+                                    <button
+                                      disabled={connectingSession !== null}
+                                      aria-label={`Connect to ${session.title}`}
+                                      onClick={async () => {
+                                        setConnectingSession(session.id);
+                                        setSessionsError("");
+                                        try {
+                                          const targetId = artifact.id;
+                                          const status = await api(
+                                            `/artifacts/${targetId}/feedback/codex`,
+                                            post({ session: session.id }),
+                                          );
+                                          if (route().id !== targetId) return;
+                                          setFeedback(status);
+                                          notify(
+                                            "Comments connected to your Codex conversation",
+                                          );
+                                        } catch (error) {
+                                          setSessionsError(
+                                            error instanceof Error
+                                              ? error.message
+                                              : String(error),
+                                          );
+                                        } finally {
+                                          setConnectingSession(null);
+                                        }
+                                      }}
+                                    >
+                                      {connectingSession === session.id
+                                        ? "Connecting…"
+                                        : "Connect"}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <button
+                                disabled={sessionsLoading}
+                                onClick={() => void loadSessions()}
+                              >
+                                Refresh conversations
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <p>
+                                Run this command in the agent's working
+                                directory. Keep the terminal open.
+                              </p>
+                              <code>{connectionCommand}</code>
+                              <button
+                                onClick={() =>
+                                  run(async () => {
+                                    await navigator.clipboard.writeText(
+                                      connectionCommand,
+                                    );
+                                    notify("Connection command copied");
+                                  })
                                 }
-                              />
-                            </label>
+                              >
+                                <Copy size={12} /> Copy command
+                              </button>
+                            </>
                           )}
-                          <code>{connectionCommand}</code>
-                          <button
-                            disabled={
-                              connectionProvider === "codex" &&
-                              !validConnectionSession
-                            }
-                            onClick={() =>
-                              run(async () => {
-                                await navigator.clipboard.writeText(
-                                  connectionCommand,
-                                );
-                                notify("Connection command copied");
-                              })
-                            }
-                          >
-                            <Copy size={12} /> Copy command
-                          </button>
                         </details>
                       )}
                       <div className="comment-intro">

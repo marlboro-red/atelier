@@ -197,22 +197,50 @@ test("mobile comments use a compact popup and show connection state in the threa
       .queued,
   ).toBe(1);
   await page.getByRole("button", { name: "Comments (1)" }).click();
+  await page.route("**/api/agents/codex/sessions", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          title: "Tide chart discussion",
+          project: "/work/tides",
+          state: "idle",
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000002",
+          title: "Another project",
+          project: "/work/other",
+          state: "active",
+        },
+      ],
+    }),
+  );
+  let selected: string | undefined;
+  await page.route("**/api/artifacts/*/feedback/codex", async (route) => {
+    selected = route.request().postDataJSON().session;
+    // Exercise the existing queue status UI without starting a real agent.
+    await request.post(`/api/artifacts/${a.id}/feedback/connect`, {
+      data: { provider: "codex", session: selected },
+    });
+    const status = await (
+      await request.get(`/api/artifacts/${a.id}/feedback`)
+    ).json();
+    await route.fulfill({ json: status });
+  });
   await page.getByText("Connect an agent", { exact: true }).click();
-  await expect(page.locator(".agent-connect code")).toContainText(
-    `atelier watch ${a.id} --agent codex --cwd . --session SESSION_ID`,
-  );
   await expect(
-    page.getByRole("button", { name: "Copy command" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Connect to Tide chart discussion" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Codex session UUID")).toHaveCount(0);
+  await expect(page.locator(".agent-connect code")).toHaveCount(0);
   await page
-    .getByLabel("Codex session UUID")
-    .fill("00000000-0000-4000-8000-000000000001");
-  await expect(
-    page.getByRole("button", { name: "Copy command" }),
-  ).toBeEnabled();
-  await expect(page.locator(".agent-connect code")).toContainText(
-    "--session 00000000-0000-4000-8000-000000000001",
+    .getByRole("button", { name: "Connect to Tide chart discussion" })
+    .click();
+  expect(selected).toBe("00000000-0000-4000-8000-000000000001");
+  await expect(page.locator(".feedback-status")).toContainText(
+    "codex connected",
   );
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
   const connected = await (
     await request.post(`/api/artifacts/${a.id}/feedback/connect`, {
       data: { provider: "copilot", session: "test" },
@@ -332,4 +360,78 @@ test("non-text elements and whole sections have visible targets and persistent c
   );
   await page.getByRole("button", { name: "Close comment" }).click();
   await expect(frame.locator("atelier-selection-highlight")).toHaveCount(0);
+});
+
+test("conversation picker handles unavailable, empty, and closed sessions without asking for IDs", async ({
+  page,
+  request,
+}) => {
+  const a = await (
+    await request.post("/api/artifacts", {
+      data: {
+        title: "Picker states",
+        content: {
+          kind: "html",
+          entry: "index.html",
+          files: { "index.html": "<h1>Picker</h1>" },
+        },
+      },
+    })
+  ).json();
+  let state = "offline";
+  await page.route("**/api/agents/codex/sessions", (route) =>
+    route.fulfill(
+      state === "offline"
+        ? {
+            status: 503,
+            json: {
+              error:
+                "Open Codex to connect a conversation, then refresh this list.",
+            },
+          }
+        : {
+            json:
+              state === "empty"
+                ? []
+                : [
+                    {
+                      id: "00000000-0000-4000-8000-000000000001",
+                      title: "My conversation",
+                      project: "/work/report",
+                      state: "idle",
+                    },
+                  ],
+          },
+    ),
+  );
+  await page.route("**/api/artifacts/*/feedback/codex", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: "Conversation closed. Refresh and connect again." },
+    }),
+  );
+  await page.goto("/a/" + a.id);
+  await page.getByRole("button", { name: "Comments (0)" }).click();
+  await page.getByText("Connect an agent", { exact: true }).click();
+  await expect(page.locator(".agent-connect")).toContainText(
+    "Open Codex to connect",
+  );
+  state = "empty";
+  await page.getByRole("button", { name: "Refresh conversations" }).click();
+  await expect(page.locator(".agent-connect")).toContainText(
+    "No open conversations",
+  );
+  state = "available";
+  await page.getByRole("button", { name: "Refresh conversations" }).click();
+  await page
+    .getByRole("button", { name: "Connect to My conversation" })
+    .click();
+  await expect(page.locator(".agent-connect")).toContainText(
+    "Conversation closed",
+  );
+  await expect(page.locator(".feedback-status")).toContainText(
+    "No agent connected",
+  );
+  await expect(page.getByLabel("Codex session UUID")).toHaveCount(0);
+  await expect(page.locator(".agent-connect code")).toHaveCount(0);
 });

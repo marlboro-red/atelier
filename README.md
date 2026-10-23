@@ -119,21 +119,11 @@ The agent returns a URL such as `http://atelier.localhost:4310/a/<id>`. Open tha
 
 For a chart, diagram, or other visual element, click **Comment on an element** in the header, then click the element. Choose **Section** to target a whole section. A blue outline shows the target before you click. The header's **Comments** button shows the number of unresolved threads. Click highlighted text or a numbered marker to open its thread.
 
-To create an artifact and keep its creating agent connected, run:
+For new Codex artifacts, the agent connects feedback to its own conversation as part of creation. Keep Codex and atelier open. You do not need a separate watcher terminal.
 
-```sh
-atelier agent "Create a report with a chart and diagram" --agent codex --cwd .
-```
+For an existing artifact, open **Comments → Connect an agent**. Choose your Codex conversation by its name and project, then click **Connect**. Comments arrive in that conversation. If the list is empty, open the conversation in Codex and click **Refresh conversations**.
 
-Use `--agent copilot` for GitHub Copilot CLI or `--agent claude` for Claude Code. Every artifact created through that session's MCP connection receives feedback in the same session by default. Keep the terminal open. Claude asks you to enable its local development channel.
-
-To send comments to a Codex conversation you already have open, keep that conversation open and run:
-
-```sh
-atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
-```
-
-Use the conversation's session UUID. The watcher sends comments through Codex's queue without starting another session. **Comments → Connect an agent** also accepts the UUID and copies the command. See [automatic comment delivery](docs/agent-feedback.md) for setup and interrupted deliveries.
+See [automatic comment delivery](docs/agent-feedback.md) for Claude Code, Copilot, and advanced terminal setup.
 
 The agent saves a new revision under the same artifact ID. The thread links to the revision that addressed it. Click **History** in the header to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 

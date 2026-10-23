@@ -119,3 +119,27 @@ for (const provider of ["codex", "copilot"] as const)
       assert.ok(rpc.closed);
     }
   });
+
+test("managed agent subprocesses cannot inherit the launching Codex conversation identity", async () => {
+  const { AgentRpc } = await import("../src/agents/rpc.js");
+  const prior = process.env.CODEX_THREAD_ID;
+  process.env.CODEX_THREAD_ID = "launching-thread";
+  const rpc = new AgentRpc(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    process.stdin.once('data', raw => { const m = JSON.parse(raw); process.stdout.write(JSON.stringify({ id: m.id, result: { inherited: Boolean(process.env.CODEX_THREAD_ID) } }) + '\\n'); });
+  `,
+    ],
+    process.cwd(),
+  );
+  if (prior === undefined) delete process.env.CODEX_THREAD_ID;
+  else process.env.CODEX_THREAD_ID = prior;
+  try {
+    assert.equal((await rpc.request("check", {})).inherited, false);
+  } finally {
+    rpc.close();
+  }
+});

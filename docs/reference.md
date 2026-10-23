@@ -224,7 +224,7 @@ The stdio server exposes these tools:
 
 Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution. Tool annotations distinguish reads from writes. Failed tool calls return `isError` and an explanation. CLI and MCP requests reject redirects and non-loopback service addresses. A request timeout tells the agent to read the saved state before retrying a publication.
 
-Creation and duplication results also include `feedback.connected`. A connected result has `target: "creating_session"`; a disconnected result includes `reason`. MCP `create_artifact` defaults `watch` to `true`. A plain MCP connection reports disconnected because it cannot start a turn in its client. A failed feedback connection does not undo the publication.
+Creation and duplication results also include `feedback.connected`. A connected result has `target: "creating_session"`; a disconnected result includes `reason`. MCP `create_artifact` defaults `watch` to `true`. MCP creation accepts `feedbackSession`, the calling Codex agent's own thread UUID. With that field, the service connects the artifact to the existing conversation. Without an identity or a managed creator connection, the result reports disconnected and points to the viewer picker. A failed feedback connection does not undo the publication.
 
 ### Library previews
 
@@ -373,6 +373,12 @@ The API rejects unrecognized hostnames and disallowed origins. Local processes r
 The [security model](security.md) describes the trusted components, resource limits, and remaining risks.
 
 ### Feedback delivery endpoints
+
+`GET /api/agents/codex/sessions` lists up to 100 loaded Codex conversations with their ID, title, project directory, and state. It returns metadata, not transcripts. The viewer lists names and projects, without exposing a session-ID input.
+
+`POST /api/artifacts/:id/feedback/codex` accepts `{ "session": "UUID" }` and starts forwarding in the atelier service. The selected conversation must already be loaded. The request accepts no command, environment, working directory, or socket path. The service allows up to 32 concurrent connections, stops them on shutdown, and does not restore them automatically after restart. Duplicate connects to the same conversation reuse the connection.
+
+`atelier connect ID` reads `CODEX_THREAD_ID` from its caller's environment and requests that service-owned connection. CLI `create` does the same when the variable is present, unless `--no-watch` is passed.
 
 All paths below are relative to `/api/artifacts/:id/feedback`. `notifyAgent` defaults to `false` on comment creation and update. The viewer sets it to `true` for user feedback. Feedback events and connection metadata persist in SQLite and are deleted with their artifact.
 
