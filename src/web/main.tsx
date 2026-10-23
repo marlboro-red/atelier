@@ -752,6 +752,8 @@ function App() {
                     <div className="share-options">
                       <p>
                         Share revision {revision.number} with its current state.
+                        Recipients see only the document, without Atelier’s
+                        header or review controls.
                       </p>
                       <button
                         disabled={busy}

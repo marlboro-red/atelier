@@ -110,7 +110,21 @@ test("agent-created artifacts fill the page; review and exports preserve interac
     .frameLocator("iframe")
     .getByLabel("Period")
     .selectOption("6 months");
-  await expect(standalone.locator(".review-controls")).toHaveCount(0);
+  const workspaceControls =
+    ".review-controls, .review-menu, .review-panel, .revision-banner, .selection-banner";
+  await expect(standalone.locator(workspaceControls)).toHaveCount(0);
+  await expect(
+    standalone.frameLocator("iframe").locator(workspaceControls),
+  ).toHaveCount(0);
+  await expect(
+    standalone.getByRole("banner", { name: "Artifact toolbar" }),
+  ).toHaveCount(0);
+  expect(await standalone.locator("iframe").boundingBox()).toEqual({
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 1000,
+  });
   await standalone.close();
   const pdfDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Save as PDF" }).click();
