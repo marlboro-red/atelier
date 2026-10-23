@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render } from "../src/server/render.js";
-import { templates } from "../src/web/templates.js";
+import { templates } from "./fixtures/examples.js";
 test("compiles the dashboard and embeds an isolated runtime", async () => {
   const html = await render(templates[0].content, { id: "test", revision: 1 });
   assert.match(html, /artifact-root/);

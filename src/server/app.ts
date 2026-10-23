@@ -74,13 +74,14 @@ export function createApp(store: Store, previewPort = 4311) {
       .object({
         revision: z.number().int().positive(),
         baseRevision: z.number().int().positive(),
+        author: z.string().max(100).default("Agent"),
       })
       .parse(req.body);
     const r = store.update(id, {
       baseRevision: body.baseRevision,
       content: store.revision(id, body.revision).content,
       summary: `Restored revision ${body.revision}`,
-      author: "You",
+      author: body.author,
       commentIds: [],
     });
     changed(id);
@@ -89,13 +90,16 @@ export function createApp(store: Store, previewPort = 4311) {
   app.post("/api/artifacts/:id/duplicate", async (req) => {
     const id = params(req).id;
     const body = z
-      .object({ revision: z.number().int().positive() })
+      .object({
+        revision: z.number().int().positive(),
+        author: z.string().max(100).default("Agent"),
+      })
       .parse(req.body);
     const a = store.get(id);
     const copy = store.create({
       title: a.title + " — copy",
       description: a.description,
-      author: "You",
+      author: body.author,
       summary: `Copied from ${a.id} revision ${body.revision}`,
       content: store.revision(id, body.revision).content,
     });

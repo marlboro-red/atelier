@@ -1,6 +1,6 @@
 # Atelier
 
-A local browser workspace for artifacts made with any agent. Create interactive dashboards, documents, diagrams, illustrations, presentations, and browser animations. Highlight something, leave feedback, and let an agent revise the same artifact without losing its history.
+A local service for agent-authored artifacts. Agents create standalone pages that can freely combine text, charts, diagrams, images, controls, and browser animations. Humans explore the result, highlight details, leave feedback, and share. The agent revises the same artifact without losing its history.
 
 ## Run locally
 
@@ -28,18 +28,22 @@ Environment variables:
 | `ATELIER_DATA_DIR` | `~/.atelier` | Database directory |
 | `ATELIER_URL` | `http://127.0.0.1:4310` | Service address for CLI/MCP clients |
 
-## Workspace
+## Browser experience
 
-- Create from five working templates, or import source files, images, and JSON artifact manifests.
-- Preview React, HTML, Markdown, or SVG. Markdown includes tables, code blocks, and KaTeX math.
-- Build charts with Recharts or D3, diagrams with Mermaid, and interactive graphics with SVG, canvas, or browser WebGL APIs.
-- View and edit source, with a change summary on every saved revision.
-- Select text or elements to attach feedback; reply, resolve, and reopen threads.
-- View revision history, compare source side by side, restore an earlier revision as a new one, or duplicate a revision into a new artifact.
-- Export a specific revision as standalone HTML or PDF; download source as a JSON manifest.
-- Send preview errors to the comment queue for an agent to repair.
+Every `/a/<id>` URL opens the artifact as a full-viewport standalone page. There is no persistent workspace sidebar, header, template selector, or editor. A small **Review** control opens optional overlays for:
 
-An artifact keeps one stable ID: `/a/<id>`. Historical links use `/a/<id>/revisions/<number>`. Updates include `baseRevision`; stale updates return HTTP 409, and agents must reconcile them. Unsaved source edits survive incoming agent revisions.
+- Comments anchored to selected text or elements, with replies and resolution.
+- Revision history and side-by-side source comparison.
+- Read-only source inspection and copying.
+- HTML/PDF sharing and source download.
+
+Review overlays do not resize or remount the artifact, so chart filters, animation, and other live state remain intact. Close the controls or press Escape to return to the page. Exports contain the artifact itself, without review controls.
+
+The root page is a library of agent-created artifacts. It updates as agents publish work; it has no create, import, edit, restore, or duplicate actions. All authoring happens through MCP, CLI, or the HTTP API. Agents can restore old revisions and duplicate artifacts through MCP.
+
+React and HTML are general-purpose rendering formats, not categories: one artifact may combine all supported visual content and multiple source files. Markdown and SVG are simpler optional formats. The renderer supports Recharts, D3, Mermaid, KaTeX, SVG, canvas, and browser WebGL APIs. Example compositions live only in test fixtures; they do not restrict agent output.
+
+An artifact keeps one stable ID: `/a/<id>`. Historical links use `/a/<id>/revisions/<number>`. Updates include `baseRevision`; stale updates return HTTP 409, and agents must reconcile them.
 
 Comments retain their original revision, selected quote, surrounding text, and DOM locator. A unique surviving quote can be located after the DOM moves. Ambiguous or removed selections stay attached to their original revision; Atelier does not guess. `data-atelier-id` attributes or stable element IDs improve anchoring.
 
@@ -58,7 +62,9 @@ Atelier owns no model credentials. Run the local service, then add its stdio MCP
 }
 ```
 
-Available tools: `list_artifacts`, `get_artifact`, `create_artifact`, `revise_artifact`, `list_revisions`, `list_comments`, `add_comment`, and `reply_to_comment`.
+Available tools: `list_artifacts`, `get_artifact`, `create_artifact`, `revise_artifact`, `restore_artifact`, `duplicate_artifact`, `list_revisions`, `list_comments`, `add_comment`, and `reply_to_comment`.
+
+Create/read/revise/restore/duplicate MCP results include a browser URL. Agents should share that link and design the artifact as a standalone page with its own composition, freely mixing supported content.
 
 A typical agent cycle:
 
@@ -95,8 +101,8 @@ All paths below are relative to `/api`. CLI and MCP use this same API.
 | GET | `/artifacts/:id` | Metadata and head revision |
 | GET / POST | `/artifacts/:id/revisions` | History / create revision |
 | GET | `/artifacts/:id/revisions/:n` | Complete immutable revision |
-| POST | `/artifacts/:id/restore` | `{revision, baseRevision}` |
-| POST | `/artifacts/:id/duplicate` | `{revision}` |
+| POST | `/artifacts/:id/restore` | `{revision, baseRevision, author?}` |
+| POST | `/artifacts/:id/duplicate` | `{revision, author?}` |
 | GET / POST | `/artifacts/:id/comments` | List / add feedback |
 | PATCH | `/artifacts/:id/comments/:cid` | `{status?, reply?, author?}` |
 | GET / PUT | `/artifacts/:id/data` | Read / write `{data}` |
@@ -152,7 +158,7 @@ npm run build          # Type-check and build the workspace UI
 npm run dev            # Watch/restart the service (uses the built UI)
 npx vite               # Optional frontend dev server on 127.0.0.1:5173
 npm test               # Storage, renderer, API, and real MCP client integration
-npm run test:browser   # Browser interaction, exports, isolation, concurrency
+npm run test:browser   # Standalone pages, mixed content, review, exports, isolation
 npm run format:check
 ```
 

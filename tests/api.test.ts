@@ -22,7 +22,7 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 8);
+    assert.equal(tools.tools.length, 10);
     const call = async (name: string, args: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: args });
       assert.ok(!result.isError, JSON.stringify(result));
@@ -65,6 +65,23 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
     const comments = await call("list_comments", { id: a.id });
     assert.equal(comments[0].status, "addressed");
     assert.equal(comments[0].replies.length, 1);
+    assert.equal(a.url, `${address}/a/${a.id}`);
+    const restored = await call("restore_artifact", {
+      id: a.id,
+      revision: 1,
+      baseRevision: 2,
+      author: "Test agent",
+    });
+    assert.equal(restored.number, 3);
+    assert.equal(restored.author, "Test agent");
+    assert.equal(restored.content.files["index.md"], "# Original");
+    const copy = await call("duplicate_artifact", {
+      id: a.id,
+      revision: 2,
+      author: "Test agent",
+    });
+    assert.notEqual(copy.id, a.id);
+    assert.equal(copy.head, 1);
     const crossOrigin = await app.inject({
       method: "POST",
       url: "/api/artifacts",

@@ -1,4 +1,4 @@
-import type { Content } from "../shared/schema";
+import type { Content } from "../../src/shared/schema";
 export const templates: {
   name: string;
   description: string;

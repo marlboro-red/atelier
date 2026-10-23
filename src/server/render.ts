@@ -278,6 +278,9 @@ function bridge(config: {
       },
     });
   });
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape") emit("escape");
+  });
   addEventListener("error", (e) =>
     emit("runtime-error", { message: e.message }),
   );

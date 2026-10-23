@@ -26,7 +26,7 @@ export const contentSchema = z
 export const createSchema = z.object({
   title: z.string().trim().min(1).max(160),
   description: z.string().max(2000).default(""),
-  author: z.string().max(100).default("You"),
+  author: z.string().max(100).default("Agent"),
   summary: z.string().max(1000).default("Initial version"),
   content: contentSchema,
 });

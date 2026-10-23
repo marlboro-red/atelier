@@ -1,26 +1,47 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { templates } from "../../src/web/templates";
-test("create, annotate, revise, preserve history, export HTML and PDF", async ({
+import { templates } from "../fixtures/examples";
+import type { Content } from "../../src/shared/schema";
+
+async function create(request: any, title: string, content: Content) {
+  const response = await request.post("/api/artifacts", {
+    data: { title, author: "Test agent", content },
+  });
+  expect(response.status()).toBe(201);
+  return response.json();
+}
+
+test("agent-created artifacts fill the page; review and exports preserve interaction state", async ({
   page,
   request,
 }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "New artifact" }).click();
-  await page
-    .getByPlaceholder("Interactive dashboard")
-    .fill("Browser test dashboard");
-  await page
-    .getByRole("button", { name: "Create artifact", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/a\//);
-  const id = page.url().split("/a/")[1];
+  const a = await create(
+    request,
+    "A standalone dashboard",
+    templates[0].content,
+  );
+  await page.goto("/a/" + a.id);
   const frame = page.frameLocator("iframe");
   await expect(
     frame.getByRole("heading", { name: "A little perspective." }),
   ).toBeVisible();
+  await expect(page.locator("iframe")).toHaveCSS("width", "1440px");
+  await expect(page.locator("iframe")).toHaveCSS("height", "1000px");
+  expect(await page.locator("iframe").boundingBox()).toEqual({
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 1000,
+  });
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await expect(page.locator(".review-menu")).toHaveCount(0);
+  await expect(page.locator(".sidebar")).toHaveCount(0);
   await frame.getByLabel("Period").selectOption("3 months");
-  await page.getByTitle("Select text or an element to comment").click();
+  await page.getByRole("button", { name: "Open review tools" }).click();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("button", { name: "Select a detail" }).click();
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
   await frame.getByRole("heading", { name: "A little perspective." }).click();
   await expect(page.locator(".selected-quote")).toContainText(
     "A little perspective.",
@@ -31,16 +52,16 @@ test("create, annotate, revise, preserve history, export HTML and PDF", async ({
   await page.getByRole("button", { name: "Send comment", exact: true }).click();
   await expect(page.locator(".comment")).toContainText("Queued for agent");
   const comments = await (
-    await request.get(`/api/artifacts/${id}/comments`)
+    await request.get(`/api/artifacts/${a.id}/comments`)
   ).json();
   const r = await (
-    await request.get(`/api/artifacts/${id}/revisions/1`)
+    await request.get(`/api/artifacts/${a.id}/revisions/1`)
   ).json();
   r.content.files["App.tsx"] = r.content.files["App.tsx"].replace(
     "A little perspective.",
     "A clearer picture.",
   );
-  const updated = await request.post(`/api/artifacts/${id}/revisions`, {
+  const updated = await request.post(`/api/artifacts/${a.id}/revisions`, {
     data: {
       baseRevision: 1,
       author: "Test agent",
@@ -54,7 +75,7 @@ test("create, annotate, revise, preserve history, export HTML and PDF", async ({
     frame.getByRole("heading", { name: "A clearer picture." }),
   ).toBeVisible();
   await expect(page.locator(".comment")).toContainText("Ready for review");
-  await page.getByTitle("Revision history").click();
+  await page.getByRole("button", { name: "History", exact: true }).click();
   await page.getByRole("button", { name: /Revision 1 Initial/ }).click();
   await expect(
     frame.getByRole("heading", { name: "A little perspective." }),
@@ -64,45 +85,60 @@ test("create, annotate, revise, preserve history, export HTML and PDF", async ({
     frame.getByRole("heading", { name: "A clearer picture." }),
   ).toBeVisible();
   await frame.getByLabel("Period").selectOption("3 months");
+  await page.getByRole("button", { name: "Source", exact: true }).click();
+  await expect(page.getByLabel("Read-only source")).toContainText(
+    "A clearer picture.",
+  );
+  await expect(page.getByRole("button", { name: "Save revision" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Share", exact: true }).click();
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Save as HTML" }).click();
-  const downloaded = await dl;
-  const html = await readFile((await downloaded.path())!, "utf8");
-  expect(html).toContain("A clearer picture.");
+  const html = await readFile((await (await dl).path())!, "utf8");
   const standalone = await page.context().newPage();
   await standalone.route("**/*", (route) => route.abort());
   await standalone.setContent(html);
   await expect(standalone.getByLabel("Period")).toHaveValue("3 months");
   await standalone.getByLabel("Period").selectOption("6 months");
+  await expect(standalone.locator(".review-controls")).toHaveCount(0);
   await standalone.close();
-  await page.getByRole("button", { name: "Share", exact: true }).click();
   const pdfDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Save as PDF" }).click();
   const pdf = await readFile((await (await pdfDownload).path())!);
   expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
-  await page.screenshot({ path: "test-results/workspace.png", fullPage: true });
+  await page.getByRole("button", { name: "Close review tools" }).click();
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await expect(frame.getByLabel("Period")).toHaveValue("3 months");
+  expect(await page.locator("iframe").boundingBox()).toEqual({
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 1000,
+  });
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/standalone-artifact.png",
+    fullPage: true,
+  });
 });
-test("all visual templates render without runtime errors", async ({
+
+test("rich visual examples render without runtime errors", async ({
   page,
   request,
 }) => {
-  for (const t of templates.slice(1)) {
-    const a = await (
-      await request.post("/api/artifacts", {
-        data: { title: t.name, content: t.content },
-      })
-    ).json();
+  for (const example of templates.slice(1)) {
+    const a = await create(request, example.name, example.content);
     await page.goto("/a/" + a.id);
     const frame = page.frameLocator("iframe");
     await expect(frame.locator("body")).not.toBeEmpty();
-    if (t.name === "Flow diagram")
+    if (example.name === "Flow diagram")
       await expect(frame.locator("svg")).toBeVisible();
-    if (t.name === "Written document")
+    if (example.name === "Written document")
       await expect(frame.locator(".katex")).toBeVisible();
-    if (t.name === "Interactive canvas")
+    if (example.name === "Interactive canvas")
       await expect(frame.locator("canvas")).toBeVisible();
-    if (t.name === "Presentation") {
+    if (example.name === "Presentation") {
       await expect(
         frame.getByRole("heading", { name: "Make room for ideas." }),
       ).toBeVisible();
@@ -111,14 +147,16 @@ test("all visual templates render without runtime errors", async ({
         frame.getByRole("heading", { name: "Create. Review. Refine." }),
       ).toBeVisible();
     }
+    await page.getByRole("button", { name: "Open review tools" }).click();
     await expect(page.locator(".runtime-errors")).toHaveCount(0);
   }
 });
-test("HTML assets, persistent data, and text selection work inside isolation", async ({
+
+test("HTML assets, persistent data, and highlighted comments work inside isolation", async ({
   page,
   request,
 }) => {
-  const content = {
+  const content: Content = {
     kind: "html",
     entry: "index.html",
     files: {
@@ -128,11 +166,7 @@ test("HTML assets, persistent data, and text selection work inside isolation", a
         '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18" fill="green"/></svg>',
     },
   };
-  const a = await (
-    await request.post("/api/artifacts", {
-      data: { title: "Local assets", content },
-    })
-  ).json();
+  const a = await create(request, "Local assets", content);
   await page.goto("/a/" + a.id);
   const frame = page.frameLocator("iframe");
   await expect(frame.locator("img")).toBeVisible();
@@ -147,7 +181,9 @@ test("HTML assets, persistent data, and text selection work inside isolation", a
   await expect(
     frame.getByRole("button", { name: "1", exact: true }),
   ).toBeVisible();
-  await page.getByTitle("Select text or an element to comment").click();
+  await page.getByRole("button", { name: "Open review tools" }).click();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("button", { name: "Select a detail" }).click();
   await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
   await frame.locator("h1").evaluate((el) => {
     const range = document.createRange();
@@ -157,105 +193,89 @@ test("HTML assets, persistent data, and text selection work inside isolation", a
     el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
   });
   await expect(page.locator(".selected-quote")).toContainText("A local image");
-  const isolated = await frame.locator("body").evaluate(() => {
-    try {
-      return parent.document.body.innerHTML;
-    } catch {
-      return "isolated";
-    }
-  });
-  expect(isolated).toBe("isolated");
-});
-test("source edits survive agent updates and stale saves are rejected", async ({
-  page,
-  request,
-}) => {
-  const content = {
-    kind: "markdown",
-    entry: "index.md",
-    files: { "index.md": "# Start" },
-  };
-  const a = await (
-    await request.post("/api/artifacts", {
-      data: { title: "Concurrent editing", content },
-    })
-  ).json();
-  await page.goto("/a/" + a.id);
-  await page.getByRole("button", { name: "Source", exact: true }).click();
-  await page.getByLabel("Artifact source").fill("# My unsaved work");
-  await request.post(`/api/artifacts/${a.id}/revisions`, {
-    data: {
-      baseRevision: 1,
-      author: "Agent",
-      summary: "Agent update",
-      content: { ...content, files: { "index.md": "# Agent change" } },
-    },
-  });
-  await expect(page.getByLabel("Artifact source")).toHaveValue(
-    "# My unsaved work",
-  );
-  await page.getByLabel("Change summary").fill("My change");
-  await page
-    .getByRole("button", { name: "Save revision", exact: true })
-    .click();
-  await expect(page.getByRole("alert")).toContainText("Revision conflict");
+  expect(
+    await frame.locator("body").evaluate(() => {
+      try {
+        return parent.document.body.innerHTML;
+      } catch {
+        return "isolated";
+      }
+    }),
+  ).toBe("isolated");
 });
 
-test("imports existing source, saves edits, restores without erasing history, and duplicates", async ({
+test("the library receives agent creations and has no authoring controls", async ({
   page,
   request,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "New artifact" }).click();
-  await page.locator("input[type=file]").setInputFiles({
-    name: "notes.md",
-    mimeType: "text/markdown",
-    buffer: Buffer.from("# Imported notes\n\nA first draft."),
+  await expect(
+    page.getByRole("button", {
+      name: /^(new artifact|create artifact|create an artifact|import|template)$/i,
+    }),
+  ).toHaveCount(0);
+  await expect(page.locator("input[type=file]")).toHaveCount(0);
+  const title = "Agent report " + Date.now();
+  const a = await create(request, title, {
+    kind: "markdown",
+    entry: "report.md",
+    files: {
+      "report.md": "# An agent-made report\n\nCreated through the API.",
+    },
   });
-  await expect(
-    page.getByRole("button", { name: "Imported 1 files" }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Create artifact", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/a\//);
-  const id = page.url().split("/a/")[1];
+  await page.getByLabel("Search artifacts").fill(title);
+  await page.getByRole("button", { name: new RegExp(title) }).click();
+  await expect(page).toHaveURL(new RegExp(`/a/${a.id}$`));
   await expect(
     page
       .frameLocator("iframe")
-      .getByRole("heading", { name: "Imported notes" }),
+      .getByRole("heading", { name: "An agent-made report" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Open review tools" }).click();
   await page.getByRole("button", { name: "Source", exact: true }).click();
-  await page
-    .getByLabel("Artifact source")
-    .fill("# Revised notes\n\nA better draft.");
-  await page.getByLabel("Change summary").fill("Refine imported document");
-  await page
-    .getByRole("button", { name: "Save revision", exact: true })
-    .click();
-  await expect(page.locator(".version-tag")).toContainText("v2");
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.getByLabel("Read-only source")).toContainText(
+    "Created through the API.",
+  );
+  await expect(page.locator("textarea")).toHaveCount(0);
   await expect(
-    page.frameLocator("iframe").getByRole("heading", { name: "Revised notes" }),
-  ).toBeVisible();
-  await page.getByTitle("Revision history").click();
-  await page.getByRole("button", { name: "Restore", exact: true }).click();
-  await expect(page.locator(".version-tag")).toContainText("v3");
+    page.getByRole("button", { name: /save revision|restore|duplicate/i }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await expect(page.locator(".review-menu")).toHaveCount(0);
+});
+
+test("text, charts, diagrams, and animation coexist in one artifact", async ({
+  page,
+  request,
+}) => {
+  const a = await create(request, "A living field guide", {
+    kind: "react",
+    entry: "App.tsx",
+    files: {
+      "App.tsx": `import React,{useEffect,useRef} from 'react';import {LineChart,Line,XAxis} from 'recharts';import mermaid from 'mermaid';export default function App(){const diagram=useRef(null),canvas=useRef(null);useEffect(()=>{mermaid.initialize({startOnLoad:false,theme:'neutral'});mermaid.render('mixed-diagram','graph LR; A[Observe] --> B[Explore]; B --> C[Understand];').then(({svg})=>diagram.current.innerHTML=svg);const ctx=canvas.current.getContext('2d');let id;function draw(t){ctx.fillStyle='#243e3a';ctx.fillRect(0,0,500,120);ctx.fillStyle='#b4c89e';for(let i=0;i<35;i++){ctx.beginPath();ctx.arc(i*15,60+Math.sin(i*.3+t*.001)*25,3,0,7);ctx.fill()}canvas.current.dataset.frame=String(t);id=requestAnimationFrame(draw)}id=requestAnimationFrame(draw);return()=>cancelAnimationFrame(id)},[]);return <main style={{maxWidth:1000,margin:'auto',padding:60,fontFamily:'system-ui',color:'#344b40'}}><small>FIELD NOTES / 001</small><h1 style={{font:'48px Georgia'}}>A living field guide.</h1><p>One page can tell a story through words, data, diagrams, and motion.</p><section style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:40,marginTop:50}}><div><h2>See a pattern</h2><LineChart width={380} height={180} data={[{x:'May',y:12},{x:'Jun',y:35},{x:'Jul',y:22},{x:'Aug',y:51}]}><XAxis dataKey="x"/><Line dataKey="y" stroke="#6c8c57" isAnimationActive={false}/></LineChart></div><div><h2>Follow an idea</h2><div ref={diagram}/></div></section><h2>Watch it move</h2><canvas ref={canvas} width={500} height={120} style={{width:'100%',borderRadius:10}}/><p style={{fontSize:12,color:'#98a687'}}>Created by an agent. Reviewed in Atelier.</p></main>}`,
+    },
+  });
+  await page.goto("/a/" + a.id);
+  const frame = page.frameLocator("iframe");
   await expect(
-    page
-      .frameLocator("iframe")
-      .getByRole("heading", { name: "Imported notes" }),
+    frame.getByRole("heading", { name: "A living field guide." }),
   ).toBeVisible();
-  const revisions = await (
-    await request.get(`/api/artifacts/${id}/revisions`)
-  ).json();
-  expect(revisions).toHaveLength(3);
-  await page.getByTitle("Duplicate this revision").click();
-  await expect(page).not.toHaveURL(new RegExp(`/a/${id}$`));
-  await expect(page.locator(".version-tag")).toContainText("v1");
-  await expect(
-    page
-      .frameLocator("iframe")
-      .getByRole("heading", { name: "Imported notes" }),
-  ).toBeVisible();
+  await expect(frame.locator(".recharts-surface")).toBeVisible();
+  await expect(frame.locator("#mixed-diagram")).toBeVisible();
+  await expect(frame.locator("canvas")).toBeVisible();
+  const first = await frame.locator("canvas").getAttribute("data-frame");
+  await expect
+    .poll(() => frame.locator("canvas").getAttribute("data-frame"))
+    .not.toBe(first);
+  await page.screenshot({
+    path: "test-results/mixed-artifact.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Open review tools" }).click();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.screenshot({
+    path: "test-results/mixed-artifact-review.png",
+    fullPage: true,
+  });
 });

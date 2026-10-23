@@ -178,7 +178,7 @@ program
       { name: "atelier", version: "0.1.0" },
       {
         instructions:
-          "Atelier is a local artifact workspace. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Use curated browser dependencies only. The React entry must default-export a component. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.",
+          "Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the browser viewport, without required workspace headers or sidebars. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Use curated browser dependencies only. The React entry must default-export a component. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.",
       },
     );
     const tool = (
@@ -219,6 +219,7 @@ program
         const artifact = await request("/artifacts/" + segment(id));
         return {
           artifact,
+          url: `${base}/a/${id}${revision ? `/revisions/${revision}` : ""}`,
           revision: await request(
             `/artifacts/${segment(id)}/revisions/${revision ?? artifact.head}`,
           ),
@@ -227,14 +228,17 @@ program
     );
     tool(
       "create_artifact",
-      "Create a new artifact. Available packages: react, react-dom, recharts, d3, lucide-react, mermaid, katex.",
+      "Create a standalone page; freely mix text, diagrams, charts, images, and animation using React or HTML. No templates required. Available packages: react, react-dom, recharts, d3, lucide-react, mermaid, katex.",
       {
         title: z.string(),
         description: z.string().optional(),
         author: z.string(),
         content: contentSchema,
       },
-      (args) => request("/artifacts", "POST", args),
+      async (args) => {
+        const artifact = await request("/artifacts", "POST", args);
+        return { ...artifact, url: `${base}/a/${artifact.id}` };
+      },
     );
     tool(
       "revise_artifact",
@@ -247,8 +251,41 @@ program
         content: contentSchema,
         commentIds: z.array(z.string()).optional(),
       },
-      ({ id, ...args }) =>
-        request(`/artifacts/${segment(id)}/revisions`, "POST", args),
+      async ({ id, ...args }) => ({
+        ...(await request(`/artifacts/${segment(id)}/revisions`, "POST", args)),
+        url: `${base}/a/${id}`,
+      }),
+    );
+    tool(
+      "restore_artifact",
+      "Restore an earlier revision as a new revision, preserving the artifact ID and full history.",
+      {
+        id: z.string(),
+        revision: z.number().int().positive(),
+        baseRevision: z.number().int().positive(),
+        author: z.string(),
+      },
+      async ({ id, ...args }) => ({
+        ...(await request(`/artifacts/${segment(id)}/restore`, "POST", args)),
+        url: `${base}/a/${id}`,
+      }),
+    );
+    tool(
+      "duplicate_artifact",
+      "Create a separate artifact from a specific revision. Use revise_artifact for amendments to the existing artifact.",
+      {
+        id: z.string(),
+        revision: z.number().int().positive(),
+        author: z.string(),
+      },
+      async ({ id, ...args }) => {
+        const artifact = await request(
+          `/artifacts/${segment(id)}/duplicate`,
+          "POST",
+          args,
+        );
+        return { ...artifact, url: `${base}/a/${artifact.id}` };
+      },
     );
     tool(
       "list_revisions",
