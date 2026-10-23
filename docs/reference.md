@@ -29,7 +29,7 @@ An artifact has a stable `id`. Its `head` identifies the latest revision.
 | `/a/<id>` | Latest revision |
 | `/a/<id>/revisions/<number>` | Specified revision |
 
-Each artifact fills the browser viewport. The **Review** control opens comments, history, source, or export options without resizing the artifact. Closing those controls preserves the artifact's live state.
+Each artifact fills the space below a thin, pinned header. The header shows the artifact title, revision, and a link back to the library. Its **Review** control opens comments, history, source, or export options without resizing the artifact. Closing those controls preserves the artifact's live state.
 
 Agents own all authoring. The browser provides no creation form, template picker, source editor, restore action, or duplicate action.
 
@@ -58,7 +58,15 @@ The schema is defined in [src/shared/schema.ts](../src/shared/schema.ts).
 | `files` | Between 1 and 100 files, with string contents |
 | File path | Relative, at most 240 characters; no backslashes, empty segments, `.` segments, or `..` segments |
 
-React entries default-export a component. Relative imports can reference other files in the artifact, including CSS. HTML supports inline scripts and references to local script and style files.
+React entries default-export a component. Relative imports can reference other files in the artifact, including CSS. Write HTML as a page fragment, with optional `<style>` and `<script>` tags. Atelier supplies `<!doctype html>`, `<html>`, `<head>`, `<body>`, the security policy, and the runtime. HTML supports inline scripts and references to local script and style files.
+
+Full HTML documents are also accepted. Atelier merges their head content and document attributes into one shell, preserving titles, styles, scripts, and body content. Atelier controls charset, viewport, and security policy metadata.
+
+```html
+<style>h1 { color: coral; }</style>
+<h1>Report</h1>
+<p>Content goes here.</p>
+```
 
 Images can be data URLs or files in the content object. SVG files contain SVG text. Other image files contain data URLs. React can import these files as strings; HTML can reference them by relative path.
 

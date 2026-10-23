@@ -26,13 +26,16 @@ test("agent-created artifacts fill the page; review and exports preserve interac
     frame.getByRole("heading", { name: "A little perspective." }),
   ).toBeVisible();
   await expect(page.locator("iframe")).toHaveCSS("width", "1440px");
-  await expect(page.locator("iframe")).toHaveCSS("height", "1000px");
+  await expect(page.locator("iframe")).toHaveCSS("height", "956px");
   expect(await page.locator("iframe").boundingBox()).toEqual({
     x: 0,
-    y: 0,
+    y: 44,
     width: 1440,
-    height: 1000,
+    height: 956,
   });
+  await expect(
+    page.getByRole("banner", { name: "Artifact toolbar" }),
+  ).toBeVisible();
   await expect(page.locator(".review-panel")).toHaveCount(0);
   await expect(page.locator(".review-menu")).toHaveCount(0);
   await expect(page.locator(".sidebar")).toHaveCount(0);
@@ -112,9 +115,9 @@ test("agent-created artifacts fill the page; review and exports preserve interac
   await expect(frame.getByLabel("Period")).toHaveValue("3 months");
   expect(await page.locator("iframe").boundingBox()).toEqual({
     x: 0,
-    y: 0,
+    y: 44,
     width: 1440,
-    height: 1000,
+    height: 956,
   });
   await expect(page.getByRole("status")).toHaveCount(0);
   await page.screenshot({
@@ -395,3 +398,47 @@ test("Google Fonts load in previews and HTML exports while other requests stay b
   expect(fontRequests).toBe(2);
   expect(unexpected).toEqual([]);
 });
+
+for (const fullDocument of [false, true]) {
+  test(`HTML ${fullDocument ? "documents" : "fragments"} preserve styles, runtime, and interactions`, async ({
+    page,
+    request,
+  }) => {
+    const head =
+      "<title>HTML contract</title><style>.content{color:rgb(20, 60, 90)}</style><script>window.runtimeReady = !!window.atelier;</script>";
+    const body =
+      "<main class=\"content\"><h1>HTML contract</h1><button onclick=\"this.textContent = window.runtimeReady ? 'Ready' : 'Missing runtime'\">Check runtime</button></main>";
+    const source = fullDocument
+      ? `<!doctype html><html lang="fr"><head>${head}</head><body class="authored">${body}</body></html>`
+      : head + body;
+    const artifact = await create(request, "HTML contract", {
+      kind: "html",
+      entry: "index.html",
+      files: { "index.html": source },
+    });
+    await page.goto("/a/" + artifact.id);
+    const frame = page.frameLocator("iframe");
+    await expect(frame.locator("h1")).toHaveCSS("color", "rgb(20, 60, 90)");
+    await frame.getByRole("button", { name: "Check runtime" }).click();
+    await expect(
+      frame.getByRole("button", { name: "Ready", exact: true }),
+    ).toBeVisible();
+    if (fullDocument) {
+      await expect(frame.locator("html")).toHaveAttribute("lang", "fr");
+      await expect(frame.locator("body")).toHaveClass("authored");
+    }
+    const exported = await request.post(
+      `/api/artifacts/${artifact.id}/export`,
+      { data: { format: "html", revision: 1 } },
+    );
+    expect(exported.ok()).toBe(true);
+    await page.goto("about:blank");
+    await page.setContent(await exported.text());
+    await expect(page).toHaveTitle("HTML contract");
+    await page.getByRole("button", { name: "Check runtime" }).click();
+    await expect(
+      page.getByRole("button", { name: "Ready", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("h1")).toHaveCSS("color", "rgb(20, 60, 90)");
+  });
+}

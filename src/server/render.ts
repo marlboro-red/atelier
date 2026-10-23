@@ -1,4 +1,10 @@
 import { build } from "esbuild";
+import {
+  parse,
+  serialize,
+  serializeOuter,
+  type DefaultTreeAdapterMap,
+} from "parse5";
 import { posix } from "node:path";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
@@ -28,6 +34,45 @@ const css = readFileSync(
   const bytes = readFileSync(require.resolve("katex/dist/" + path));
   return `url(data:font/woff2;base64,${bytes.toString("base64")})`;
 });
+function htmlDocument(source: string) {
+  type Element = DefaultTreeAdapterMap["element"];
+  const document = parse(source);
+  const html = document.childNodes.find(
+    (node): node is Element => node.nodeName === "html",
+  )!;
+  const head = html.childNodes.find(
+    (node): node is Element => node.nodeName === "head",
+  )!;
+  const body = html.childNodes.find(
+    (node): node is Element => node.nodeName === "body",
+  )!;
+  // Atelier owns encoding, viewport, and security policy. Keep authored styles,
+  // scripts, metadata, and attributes on the single document shell.
+  head.childNodes = head.childNodes.filter((node) => {
+    if (!("tagName" in node) || node.tagName !== "meta") return true;
+    return !node.attrs.some(
+      ({ name, value }) =>
+        name === "charset" ||
+        (name === "name" && value.toLowerCase() === "viewport") ||
+        (name === "http-equiv" &&
+          ["content-security-policy", "content-type"].includes(
+            value.toLowerCase(),
+          )),
+    );
+  });
+  const opening = (node: Element) =>
+    serializeOuter({ ...node, childNodes: [] }).replace(
+      new RegExp(`</${node.tagName}>$`),
+      "",
+    );
+  return {
+    htmlOpen: opening(html),
+    headOpen: opening(head),
+    bodyOpen: opening(body),
+    head: serialize(head),
+    body: serialize(body),
+  };
+}
 async function bundle(content: Content, entry: string, react = false) {
   const result = await build({
     bundle: true,
@@ -446,6 +491,16 @@ export async function render(
       return `${attr}="${url}"`;
     });
   }
+  const document =
+    content.kind === "html"
+      ? htmlDocument(body)
+      : {
+          htmlOpen: "<html>",
+          headOpen: "<head>",
+          bodyOpen: "<body>",
+          head: "",
+          body,
+        };
   const config = {
     id: options.id,
     revision: options.revision,
@@ -457,5 +512,5 @@ export async function render(
   const bootstrap = `const __name=(fn)=>fn;(${bridge.toString()})(${escape(JSON.stringify(config))});`;
   const policy =
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' data: https://fonts.googleapis.com; img-src data: blob:; font-src data: https://fonts.gstatic.com; connect-src 'none'; media-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html{color-scheme:light}body{margin:0;color:#292722;font-family:system-ui,sans-serif}*{box-sizing:border-box}.document{max-width:860px;margin:auto;padding:48px;line-height:1.75}.document h1,.document h2,.document h3{line-height:1.2}.document img,svg{max-width:100%}.document pre{padding:20px;background:#f4f3ef;overflow:auto}.document table{border-collapse:collapse;width:100%}.document td,.document th{padding:10px;border:1px solid #ddd;text-align:left}.document blockquote{border-left:3px solid #c8a780;margin:24px 0;padding-left:20px;color:#666}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{padding:0}pre,figure,tr{break-inside:avoid}}${styles.replace(/<\/style/gi, "<\\/style")}</style><script>${bootstrap.replace(/<\/script/gi, "<\\/script")}</script></head><body>${body}<script>${script.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+  return `<!doctype html>${document.htmlOpen}${document.headOpen}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html{color-scheme:light}body{margin:0;color:#292722;font-family:system-ui,sans-serif}*{box-sizing:border-box}.document{max-width:860px;margin:auto;padding:48px;line-height:1.75}.document h1,.document h2,.document h3{line-height:1.2}.document img,svg{max-width:100%}.document pre{padding:20px;background:#f4f3ef;overflow:auto}.document table{border-collapse:collapse;width:100%}.document td,.document th{padding:10px;border:1px solid #ddd;text-align:left}.document blockquote{border-left:3px solid #c8a780;margin:24px 0;padding-left:20px;color:#666}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{padding:0}pre,figure,tr{break-inside:avoid}}${styles.replace(/<\/style/gi, "<\\/style")}</style><script>${bootstrap.replace(/<\/script/gi, "<\\/script")}</script>${document.head}</head>${document.bodyOpen}${document.body}<script>${script.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
 }

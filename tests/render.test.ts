@@ -83,3 +83,25 @@ test("Pele diagram text cannot inject HTML scripts", async () => {
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.match(html, /pele-flowchart/);
 });
+
+test("normalizes HTML documents without losing attributes, head content, or script text", async () => {
+  const html = await render(
+    {
+      kind: "html",
+      entry: "index.html",
+      files: {
+        "index.html": `<!doctype html><html lang="fr" class="dark"><head><title>Report</title><meta charset="iso-8859-1"><meta name="viewport" content="width=500"><style>body{color:red}</style><script>window.example = "<body>literal</body>";</script></head><body class="report" data-label='a"b'><h1>Hello</h1></body></html>`,
+      },
+    },
+    { id: "test", revision: 1 },
+  );
+  assert.equal((html.match(/<!doctype/gi) ?? []).length, 1);
+  assert.equal((html.match(/<html\b/g) ?? []).length, 1);
+  assert.equal((html.match(/<head>/g) ?? []).length, 1);
+  assert.match(html, /<html lang="fr" class="dark">/);
+  assert.match(html, /<body class="report" data-label="a&quot;b">/);
+  assert.match(html, /<title>Report<\/title>/);
+  assert.match(html, /window.example = "<body>literal<\/body>"/);
+  assert.doesNotMatch(html, /iso-8859-1|width=500/);
+  assert.equal((html.match(/name="viewport"/g) ?? []).length, 1);
+});

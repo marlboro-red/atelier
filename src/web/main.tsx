@@ -321,7 +321,18 @@ function App() {
                   </button>
                 </div>
               )}
-              <div className="review-controls">
+              <header className="review-controls" aria-label="Artifact toolbar">
+                <button
+                  className="artifact-back"
+                  aria-label="Back to artifacts"
+                  onClick={() => navigate("")}
+                >
+                  <ArrowLeft size={15} />
+                </button>
+                <span className="artifact-header-title" title={artifact.title}>
+                  {artifact.title}
+                </span>
+                <span className="version-tag">v{revision.number}</span>
                 <button
                   className={"review-toggle " + (reviewOpen ? "active" : "")}
                   aria-label={
@@ -422,7 +433,7 @@ function App() {
                     )}
                   </div>
                 )}
-              </div>
+              </header>
               {panel && reviewOpen && (
                 <aside
                   className={
