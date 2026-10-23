@@ -59,6 +59,7 @@
     "src",
     "dist/web",
     "docs",
-    "tsconfig.json"
+    "tsconfig.json",
+    "skills"
   ]
 }

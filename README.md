@@ -98,6 +98,10 @@ Run `node -p "process.execPath"` to find Node, and `npm root --global` to find y
 
 You can also point directly to `bin/atelier.mjs` in your cloned repository. Escape Windows backslashes as `\\` in JSON, or use forward slashes.
 
+### Add authoring guidance (optional)
+
+Atelier includes the [atelier-artifacts skill](skills/atelier-artifacts/SKILL.md) for choosing formats, designing pages, preserving export state, and applying comments to existing artifacts. Follow the [skill installation guide](docs/skills.md) for Codex, Claude Code, or GitHub Copilot. MCP works without it.
+
 ### Create your first artifact
 
 Start a new agent session to load the connection. Ask the agent to create an artifact:
