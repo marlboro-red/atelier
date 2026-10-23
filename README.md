@@ -8,21 +8,7 @@ Agents create and revise the content through MCP, the CLI, or the HTTP API. You 
 
 Requires Node.js 22.13 or later and npm.
 
-### Install from GitHub
-
-With Git installed, run:
-
-```sh
-npm install --global github:marlboro-red/atelier
-atelier install-browser
-atelier start
-```
-
-npm downloads the source and builds the app. You do not need to clone or manage a repository. `install-browser` downloads Chromium for PDF export; skip it if you only need HTML export.
-
-Atelier is not published to the npm registry. Use the full GitHub package name above.
-
-### Install from a ZIP
+### Download a ZIP
 
 No Git required:
 
@@ -37,7 +23,25 @@ No Git required:
    atelier start
    ```
 
+Atelier is not published to the npm registry, so `npm install --global atelier` is not supported.
+
 `npm ci` builds the browser app automatically. Keep the extracted directory: `npm link` points the global command to it. These commands also work in a cloned repository.
+
+### Download from the terminal
+
+On macOS or Linux, you can download and extract the same ZIP without opening GitHub:
+
+```sh
+curl --fail --location https://github.com/marlboro-red/atelier/archive/refs/heads/main.zip --output atelier.zip
+unzip atelier.zip
+cd atelier-main
+npm ci
+npm link
+atelier install-browser
+atelier start
+```
+
+### Open Atelier
 
 The service opens [Atelier](http://atelier.localhost:4310) in your browser. If that hostname does not resolve, open [127.0.0.1:4310](http://127.0.0.1:4310).
 
