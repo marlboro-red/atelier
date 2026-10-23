@@ -79,6 +79,24 @@ export function createApp(store: Store, previewPort = 4311) {
     return reply.code(201).send({ ...a, preview: await check(a.id, a.head) });
   });
   app.get("/api/artifacts/:id", async (req) => store.get(params(req).id));
+  app.patch("/api/artifacts/:id", async (req) => {
+    const id = params(req).id;
+    const { title } = z
+      .object({ title: z.string().trim().min(1).max(160) })
+      .parse(req.body);
+    const artifact = store.rename(id, title);
+    changed(id);
+    return artifact;
+  });
+  app.delete("/api/artifacts/:id", async (req) => {
+    const id = params(req).id;
+    const { baseRevision } = z
+      .object({ baseRevision: z.number().int().positive() })
+      .parse(req.body);
+    store.remove(id, baseRevision);
+    changed(id);
+    return { deleted: true, id };
+  });
   app.get("/api/artifacts/:id/revisions", async (req) =>
     store
       .revisions(params(req).id)

@@ -296,6 +296,8 @@ Paths are relative to `/api`. Request and response bodies use JSON, except expor
 | GET | `/artifacts` | List artifacts |
 | POST | `/artifacts` | Create an artifact |
 | GET | `/artifacts/:id` | Read metadata and `head` |
+| PATCH | `/artifacts/:id` | Rename an artifact |
+| DELETE | `/artifacts/:id` | Delete the artifact and its owned data |
 | GET | `/artifacts/:id/revisions` | List revision metadata |
 | POST | `/artifacts/:id/revisions` | Create a revision |
 | GET | `/artifacts/:id/revisions/:n` | Read complete revision content |
@@ -316,6 +318,8 @@ Write requests accept these fields:
 | --- | --- | --- |
 | Create artifact | `title`, `content` | `description`, `author`, `summary` |
 | Create revision | `baseRevision`, `summary`, `content` | `author`, `commentIds` |
+| Rename artifact | `title` | None |
+| Delete artifact | `baseRevision` | None |
 | Restore revision | `revision`, `baseRevision` | `author` |
 | Duplicate revision | `revision` | `author` |
 | Add comment | `revision`, `body` | `author`, `anchor` |

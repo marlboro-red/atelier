@@ -101,6 +101,32 @@ export class Store {
       return a;
     });
   }
+  rename(id: string, title: string): Artifact {
+    const name = title.trim();
+    if (!name || name.length > 160)
+      throw new HttpError(400, "Use a name between 1 and 160 characters");
+    const artifact = this.get(id);
+    artifact.title = name;
+    artifact.updatedAt = new Date().toISOString();
+    this.db
+      .prepare("UPDATE artifacts SET data=? WHERE id=?")
+      .run(JSON.stringify(artifact), id);
+    return artifact;
+  }
+  remove(id: string, baseRevision: number) {
+    this.transaction(() => {
+      const artifact = this.get(id);
+      if (artifact.head !== baseRevision)
+        throw new HttpError(
+          409,
+          "The artifact has a newer revision. Reopen Delete to review the current artifact.",
+        );
+      this.db.prepare("DELETE FROM comments WHERE artifact_id=?").run(id);
+      this.db.prepare("DELETE FROM app_data WHERE artifact_id=?").run(id);
+      this.db.prepare("DELETE FROM revisions WHERE artifact_id=?").run(id);
+      this.db.prepare("DELETE FROM artifacts WHERE id=?").run(id);
+    });
+  }
   private insertRevision(r: Revision) {
     this.db
       .prepare("INSERT INTO revisions VALUES (?,?,?)")

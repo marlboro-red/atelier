@@ -81,3 +81,62 @@ test("rejects traversal and absent entries", () => {
     false,
   );
 });
+
+test("rename preserves identity and history; delete atomically removes owned data and rejects stale heads", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atelier-manage-"));
+  const store = new Store(dir);
+  try {
+    const artifact = store.create({
+      title: "Original",
+      description: "",
+      author: "Test",
+      summary: "Create",
+      content,
+    });
+    const other = store.create({
+      title: "Keep",
+      description: "",
+      author: "Test",
+      summary: "Create",
+      content,
+    });
+    store.addComment(artifact.id, {
+      revision: 1,
+      body: "Feedback",
+      author: "User",
+      anchor: null,
+    });
+    store.setData(artifact.id, { saved: true });
+    const renamed = store.rename(artifact.id, " New name ");
+    assert.equal(renamed.id, artifact.id);
+    assert.equal(renamed.title, "New name");
+    assert.equal(renamed.head, 1);
+    assert.equal(store.revisions(artifact.id).length, 1);
+    assert.equal(
+      store.revision(artifact.id).content.files["index.md"],
+      "# Hello",
+    );
+    store.update(artifact.id, {
+      baseRevision: 1,
+      author: "Test",
+      summary: "Update",
+      content,
+      commentIds: [],
+    });
+    assert.throws(() => store.remove(artifact.id, 1), /newer revision/);
+    assert.equal(store.comments(artifact.id).length, 1);
+    store.remove(artifact.id, 2);
+    assert.throws(() => store.get(artifact.id), /not found/);
+    for (const table of ["revisions", "comments", "app_data"])
+      assert.equal(
+        store.db
+          .prepare(`SELECT count(*) AS count FROM ${table} WHERE artifact_id=?`)
+          .get(artifact.id)!.count,
+        0,
+      );
+    assert.equal(store.get(other.id).title, "Keep");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -213,7 +213,7 @@ button svg {
   position: fixed;
   z-index: 15;
   right: 20px;
-  top: 250px;
+  top: 290px;
   bottom: 20px;
   width: 360px;
   max-width: calc(100vw - 40px);
@@ -974,7 +974,7 @@ button svg {
     max-width: calc(100vw - 24px);
   }
   .review-panel {
-    top: 240px;
+    top: 280px;
     right: 12px;
     bottom: 12px;
     width: 360px;
@@ -1019,4 +1019,75 @@ button svg {
   .review-panel .comment-intro {
     padding-bottom: 7px;
   }
+}
+
+.artifact-management {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #e3e7db;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.artifact-management button {
+  font-size: 11px;
+  padding: 3px 0;
+}
+.danger-action {
+  color: #9b5044;
+}
+.management-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 24px;
+  color: #303b34;
+  background: #fcfcf8;
+  border: 1px solid #dce1d3;
+  border-radius: 10px;
+  box-shadow: 0 20px 80px #1c2d2333;
+}
+.management-dialog::backdrop {
+  background: #17211b66;
+}
+.management-dialog h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 500;
+}
+.management-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.management-dialog input {
+  width: 100%;
+  border: 1px solid #cbd3c3;
+  border-radius: 5px;
+  padding: 10px;
+  background: white;
+}
+.management-dialog p {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.dialog-actions button {
+  padding: 9px 14px;
+  border-radius: 5px;
+}
+.dialog-actions .rename-confirm {
+  background: #354d3f;
+  color: white;
+}
+.dialog-actions .delete-confirm {
+  background: #9b453c;
+  color: white;
+}
+.management-error {
+  color: #9b453c;
 }

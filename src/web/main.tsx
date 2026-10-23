@@ -14,6 +14,8 @@ import {
   ArrowRight,
   RotateCcw,
   ArrowLeft,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import type { Artifact, Revision, Comment, Anchor } from "../shared/schema";
 import "./style.css";
@@ -61,6 +63,53 @@ function App() {
     [previewPort, setPreviewPort] = useState<number | null>(null),
     [sourceFile, setSourceFile] = useState(""),
     [compare, setCompare] = useState<Revision | null>(null);
+  const [management, setManagement] = useState<{
+    action: "rename" | "delete";
+    artifact: Artifact;
+  } | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [managementError, setManagementError] = useState("");
+  const [managing, setManaging] = useState(false);
+  const managementDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (management) managementDialog.current?.showModal();
+  }, [management]);
+  function manage(action: "rename" | "delete", target: Artifact) {
+    setNameDraft(target.title);
+    setManagementError("");
+    setManagement({ action, artifact: target });
+  }
+  async function submitManagement() {
+    if (!management) return;
+    setManaging(true);
+    setManagementError("");
+    try {
+      const id = management.artifact.id;
+      if (management.action === "rename") {
+        await api(`/artifacts/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ title: nameDraft }),
+        });
+        notify("Artifact renamed");
+      } else {
+        await api(`/artifacts/${id}`, {
+          method: "DELETE",
+          body: JSON.stringify({ baseRevision: management.artifact.head }),
+        });
+        if (locationState.id === id) {
+          closeReview();
+          navigate("");
+        }
+        notify("Artifact deleted");
+      }
+      setManagement(null);
+      await refresh();
+    } catch (error: any) {
+      setManagementError(error.message);
+    } finally {
+      setManaging(false);
+    }
+  }
   const iframe = useRef<HTMLIFrameElement>(null);
   const snapshotResolvers = useRef(new Map<string, (value: unknown) => void>());
   const requestCounter = useRef(0);
@@ -112,6 +161,11 @@ function App() {
     if (!locationState.id) {
       setArtifact(null);
       setRevision(null);
+      return;
+    }
+    if (!list.some((item) => item.id === locationState.id)) {
+      closeReview();
+      navigate("");
       return;
     }
     const a = await api<Artifact>(`/artifacts/${locationState.id}`);
@@ -402,6 +456,17 @@ function App() {
                       >
                         <Download size={17} />
                         Share
+                      </button>
+                    </div>
+                    <div className="artifact-management">
+                      <button onClick={() => manage("rename", artifact)}>
+                        <Pencil size={14} /> Rename
+                      </button>
+                      <button
+                        className="danger-action"
+                        onClick={() => manage("delete", artifact)}
+                      >
+                        <Trash2 size={14} /> Delete artifact
                       </button>
                     </div>
                     {runtimeErrors.length > 0 && (
@@ -864,6 +929,79 @@ function App() {
             </section>
           )}
         </main>
+      )}
+      {management && (
+        <dialog
+          ref={managementDialog}
+          className="management-dialog"
+          aria-labelledby="management-title"
+          onCancel={(event) => {
+            if (managing) event.preventDefault();
+            else setManagement(null);
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitManagement();
+            }}
+          >
+            <h2 id="management-title">
+              {management.action === "rename"
+                ? "Rename artifact"
+                : "Delete artifact?"}
+            </h2>
+            {management.action === "rename" ? (
+              <label>
+                Artifact name
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.target.value)}
+                  required
+                  maxLength={160}
+                />
+              </label>
+            ) : (
+              <p>
+                Delete “{management.artifact.title}” and all its revisions,
+                comments, and saved data? This cannot be undone.
+              </p>
+            )}
+            {managementError && (
+              <p role="alert" className="management-error">
+                {managementError}
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button
+                type="button"
+                autoFocus={management.action === "delete"}
+                disabled={managing}
+                onClick={() => setManagement(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className={
+                  management.action === "delete"
+                    ? "delete-confirm"
+                    : "rename-confirm"
+                }
+                disabled={
+                  managing ||
+                  (management.action === "rename" && !nameDraft.trim())
+                }
+              >
+                {managing
+                  ? "Saving…"
+                  : management.action === "rename"
+                    ? "Save name"
+                    : "Delete artifact"}
+              </button>
+            </div>
+          </form>
+        </dialog>
       )}
       {error && (
         <div className="error-banner" role="alert">

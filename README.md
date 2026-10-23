@@ -122,6 +122,10 @@ Comments wait until an agent reads them. Atelier does not start or wake an agent
 
 The agent saves a new revision under the same artifact ID. Click **Review**, then **History**, to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 
+## Manage artifacts
+
+Open **Review → Rename** to change an artifact's name without changing its ID or revision history. **Review → Delete artifact** asks for confirmation, then permanently removes the artifact, its revisions, comments, and saved data.
+
 ## Export a revision
 
 Open the revision you want to share. Click **Review**, then **Share**.
