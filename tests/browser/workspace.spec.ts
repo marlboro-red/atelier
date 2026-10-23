@@ -41,9 +41,7 @@ test("agent-created artifacts fill the page; review and exports preserve interac
   await expect(page.locator(".review-menu")).toHaveCount(0);
   await expect(page.locator(".sidebar")).toHaveCount(0);
   await frame.getByLabel("Period").selectOption("3 months");
-  await page.getByRole("button", { name: "Open review tools" }).click();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
-  await page.getByRole("button", { name: "Select a detail" }).click();
+  await page.getByRole("button", { name: "Comment on an element" }).click();
   await expect(page.locator(".review-panel")).toHaveCount(0);
   await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
   await frame.getByRole("heading", { name: "A little perspective." }).click();
@@ -89,6 +87,12 @@ test("agent-created artifacts fill the page; review and exports preserve interac
     frame.getByRole("heading", { name: "A clearer picture." }),
   ).toBeVisible();
   await frame.getByLabel("Period").selectOption("3 months");
+  if (
+    !(await page
+      .getByRole("button", { name: "Source", exact: true })
+      .isVisible())
+  )
+    await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("button", { name: "Source", exact: true }).click();
   await expect(page.getByLabel("Read-only source")).toContainText(
     "A clearer picture.",
@@ -130,7 +134,7 @@ test("agent-created artifacts fill the page; review and exports preserve interac
   await page.getByRole("button", { name: "Save as PDF" }).click();
   const pdf = await readFile((await (await pdfDownload).path())!);
   expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
-  await page.getByRole("button", { name: "Close review tools" }).click();
+  await page.getByRole("button", { name: "Close panel" }).click();
   await expect(page.locator(".review-panel")).toHaveCount(0);
   await expect(frame.getByLabel("Period")).toHaveValue("3 months");
   expect(await page.locator("iframe").boundingBox()).toEqual({
@@ -170,7 +174,7 @@ test("rich visual examples render without runtime errors", async ({
         frame.getByRole("heading", { name: "Create. Review. Refine." }),
       ).toBeVisible();
     }
-    await page.getByRole("button", { name: "Open review tools" }).click();
+    await page.getByRole("button", { name: "More actions" }).click();
     await expect(page.locator(".runtime-errors")).toHaveCount(0);
   }
 });
@@ -204,10 +208,6 @@ test("HTML assets, persistent data, and highlighted comments work inside isolati
   await expect(
     frame.getByRole("button", { name: "1", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Open review tools" }).click();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
-  await page.getByRole("button", { name: "Select a detail" }).click();
-  await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
   await frame.locator("h1").evaluate((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -215,6 +215,7 @@ test("HTML assets, persistent data, and highlighted comments work inside isolati
     getSelection()?.addRange(range);
     el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
   });
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
   await expect(page.locator(".selected-quote")).toContainText("A local image");
   expect(
     await frame.locator("body").evaluate(() => {
@@ -256,7 +257,13 @@ test("the library receives agent creations and has no authoring controls", async
       .frameLocator("iframe")
       .getByRole("heading", { name: "An agent-made report" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Open review tools" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
+  if (
+    !(await page
+      .getByRole("button", { name: "Source", exact: true })
+      .isVisible())
+  )
+    await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("button", { name: "Source", exact: true }).click();
   await expect(page.getByLabel("Read-only source")).toContainText(
     "Created through the API.",
@@ -297,8 +304,7 @@ test("text, charts, diagrams, and animation coexist in one artifact", async ({
     path: "test-results/mixed-artifact.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Open review tools" }).click();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("button", { name: /^Comments/ }).click();
   await page.screenshot({
     path: "test-results/mixed-artifact-review.png",
     fullPage: true,

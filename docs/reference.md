@@ -29,7 +29,7 @@ An artifact has a stable `id`. Its `head` identifies the latest revision.
 | `/a/<id>` | Latest revision |
 | `/a/<id>/revisions/<number>` | Specified revision |
 
-Each artifact fills the space below a thin, pinned header. The header shows the artifact title, revision, and a link back to the library. Its **Review** control opens comments, history, source, or export options without resizing the artifact. Closing those controls preserves the artifact's live state.
+Each artifact fills the space below a thin, pinned header. The header shows the artifact title, revision, and a link back to the library. Comments, element selection, history, and sharing are available directly in the header. Source, Rename, and Delete are under More actions. Review panels sit beside the artifact on desktop and overlay it on narrow screens. Closing a panel preserves the artifact's live state.
 
 Agents own all authoring. The browser provides no creation form, template picker, source editor, restore action, or duplicate action.
 
@@ -138,6 +138,8 @@ Pele has its own layout and visual style. Existing `mermaid` imports still use M
 
 ## Comments
 
+Highlighting text offers a nearby Comment button. The header also provides element selection and a Comments button with an unresolved count. Unresolved comments appear as highlights and numbered markers; clicking either opens the thread. Annotations do not appear in HTML or PDF exports.
+
 A comment belongs to an artifact and a revision. Its optional anchor contains the selected quote, surrounding text, DOM selector, and element tag.
 
 The browser locates a selection by its selector and quote. If the selector no longer matches, a unique quote can identify the element. Removed or ambiguous selections remain accessible through the original revision. Stable element IDs and `data-atelier-id` attributes improve matching.
@@ -226,7 +228,7 @@ Create, get, revise, restore, and duplicate results include a browser URL. MCP w
 
 The home view displays cards with cached screenshots of the artifact content, without the workspace header. Default-viewport publish checks capture a preview for the current revision. Missing previews for older artifacts are generated as their cards become visible. Chromium must be installed; otherwise the cards show a placeholder.
 
-Screenshots are stored locally with the artifact. A check for an older revision cannot overwrite the current preview. Rename preserves it; deletion removes it along with revisions, comments, and app data. Card actions and the Review menu both support Rename and Delete.
+Screenshots are stored locally with the artifact. A check for an older revision cannot overwrite the current preview. Rename preserves it; deletion removes it along with revisions, comments, and app data. Card actions and More actions both support Rename and Delete.
 
 ### Preview checks
 
@@ -362,7 +364,7 @@ Browser tests use separate ports and `.atelier/test` data. Screenshots and failu
 
 atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
 
-Generated code runs in a sandboxed inline iframe without same-origin privileges. The workspace blocks all frame navigation, including navigation to other artifacts. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Rendered previews are delivered as JSON through the API and placed into the sandbox by the workspace; raw preview URLs cannot execute. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, computed imports are rejected before compilation and filesystem loads are limited to installed dependencies, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated and only accepted while the user is selecting a detail.
+Generated code runs in a sandboxed inline iframe without same-origin privileges. The workspace blocks all frame navigation, including navigation to other artifacts. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Rendered previews are delivered as JSON through the API and placed into the sandbox by the workspace; raw preview URLs cannot execute. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, computed imports are rejected before compilation and filesystem loads are limited to installed dependencies, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated. Element selections require selection mode; natural text selections offer a Comment button and require a user click before opening the composer. Annotation messages can open only existing comment IDs for the current artifact.
 
 The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. atelier is not a security boundary between users of the computer.
 

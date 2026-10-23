@@ -1123,3 +1123,122 @@ button svg {
 .management-error {
   color: #9b453c;
 }
+
+/* The document stays full-width until a review panel is opened. */
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.toolbar-actions button {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  gap: 6px;
+}
+.toolbar-actions button:hover,
+.toolbar-actions button.selected,
+.toolbar-actions button[aria-pressed="true"] {
+  background: #edf0e7;
+  color: #354d3f;
+}
+.toolbar-actions b {
+  font-size: 10px;
+  font-weight: 500;
+}
+.review-menu {
+  width: 220px;
+  top: 48px;
+  padding: 12px;
+  background: #fcfcf8;
+}
+.review-menu > button {
+  padding: 8px;
+  width: 100%;
+  justify-content: flex-start;
+}
+.review-panel {
+  top: 44px;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  max-width: 100vw;
+  border-radius: 0;
+  border: 0;
+  border-left: 1px solid #e1e3db;
+  box-shadow: none;
+  background: #fcfcf8;
+  padding: 20px;
+}
+.panel-open .artifact-frame {
+  width: calc(100% - 360px);
+}
+.source-panel {
+  width: min(1000px, 85vw);
+}
+.selection-comment {
+  position: fixed;
+  z-index: 25;
+  background: #354d3f;
+  color: white;
+  border-radius: 6px;
+  padding: 9px 12px;
+  box-shadow: 0 3px 12px #0002;
+}
+.selection-comment:hover {
+  background: #263c30;
+  color: white;
+}
+.comment[data-active="true"] {
+  background: #f1f2e9;
+  border-radius: 6px;
+  box-shadow: 0 0 0 8px #f1f2e9;
+}
+.comment-revision {
+  font-size: 11px;
+  color: #526a40;
+  padding: 0;
+  margin: 4px 0;
+}
+.comment-intro p,
+.panel-description,
+.comment > p,
+.reply p {
+  color: #66715e;
+}
+.status {
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+@media (max-width: 650px) {
+  .review-controls {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .toolbar-actions {
+    gap: 0;
+  }
+  .toolbar-actions button {
+    padding: 0 6px;
+  }
+  .toolbar-actions button span {
+    display: none;
+  }
+  .review-panel {
+    top: 44px;
+    right: 0;
+    bottom: 0;
+    width: min(360px, 100vw);
+    max-width: 100vw;
+    padding: 16px;
+  }
+  .panel-open .artifact-frame {
+    width: 100%;
+  }
+  .source-panel {
+    width: 100%;
+  }
+}

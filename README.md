@@ -113,23 +113,23 @@ The agent returns a URL such as `http://atelier.localhost:4310/a/<id>`. Open tha
 
 ## Request a change
 
-1. Open an artifact and click **Review**.
-2. Click **Comment**, then **Select a detail**.
-3. Highlight text or select an element.
-4. Enter the change you want and send the comment.
-5. Ask your agent to read the artifact's comments and apply the changes.
+1. Highlight text in an artifact and click **Comment** beside the selection.
+2. Enter the change you want and send the comment.
+3. Ask your agent to read the artifact's comments and apply the changes.
 
-Comments wait until an agent reads them. atelier does not start or wake an agent.
+For a chart, diagram, or other visual element, click **Comment on an element** in the header, then click the element. The header's **Comments** button shows the number of unresolved threads. Click highlighted text or a numbered marker to open its thread.
 
-The agent saves a new revision under the same artifact ID. Click **Review**, then **History**, to inspect earlier revisions or compare source. Resolve the comment after you check the change.
+Comments wait until an agent reads them. atelier does not start or wake an agent. See [automatic comment delivery](docs/agent-feedback.md) for the integration options under consideration.
+
+The agent saves a new revision under the same artifact ID. The thread links to the revision that addressed it. Click **History** in the header to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 
 ## Manage artifacts
 
-The home view shows artifacts as cards with visual previews. Use the Rename and Delete actions on a card, or open **Review → Rename** to change an artifact's name without changing its ID or revision history. **Delete artifact** asks for confirmation, then permanently removes the artifact, its revisions, comments, and saved data.
+The home view shows artifacts as cards with visual previews. Use the Rename and Delete actions on a card, or open **More actions → Rename** to change an artifact's name without changing its ID or revision history. **Delete artifact** asks for confirmation, then permanently removes the artifact, its revisions, comments, and saved data.
 
 ## Export a revision
 
-Open the revision you want to share. Click **Review**, then **Share**.
+Open the revision you want to share. Click **Share** in the header.
 
 - **Save as HTML** downloads a standalone file with supported interactions and embedded assets.
 - **Save as PDF** downloads a static rendering of the current state.

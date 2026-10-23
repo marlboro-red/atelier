@@ -232,9 +232,7 @@ test("malformed artifact messages cannot crash the workspace or forge a selectio
     ),
   );
   await expect(page.locator(".review-panel")).toHaveCount(0);
-  await page.getByRole("button", { name: "Open review tools" }).click();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
-  await page.getByRole("button", { name: "Select a detail" }).click();
+  await page.getByRole("button", { name: "Comment on an element" }).click();
   await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
   await frame.locator("body").evaluate(() => {
     parent.postMessage(

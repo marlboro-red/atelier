@@ -16,7 +16,7 @@ test("viewer renames without revising content and confirms deletion", async ({
   });
   const artifact = await response.json();
   await page.goto("/a/" + artifact.id);
-  await page.getByRole("button", { name: "Open review tools" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Artifact name").fill("Renamed document");

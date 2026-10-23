@@ -286,6 +286,7 @@ function bridge(config: {
     } catch {}
   }
   const path = (el: Element): string => {
+    if (el === document.body) return "body";
     if (el.id) return "#" + CSS.escape(el.id);
     if (el.hasAttribute("data-atelier-id"))
       return (
@@ -343,40 +344,139 @@ function bridge(config: {
         pending.delete(msg.requestId);
       }
     }
+    if (msg.type === "annotations" && !config.standalone && !config.freeze) {
+      annotations = Array.isArray(msg.comments)
+        ? msg.comments.slice(0, 200)
+        : [];
+      scheduleAnnotations();
+    }
     if (msg.type === "locate") {
-      let el: Element | null = null;
-      try {
-        el = document.querySelector(msg.anchor.selector);
-      } catch {}
-      if (
-        (!el || !el.textContent?.includes(msg.anchor.quote)) &&
-        msg.anchor.quote
-      ) {
-        const matches = Array.from(document.querySelectorAll("body *")).filter(
-          (node) =>
-            !["SCRIPT", "STYLE"].includes(node.tagName) &&
-            node.textContent?.includes(msg.anchor.quote) &&
-            !Array.from(node.children).some((child) =>
-              child.textContent?.includes(msg.anchor.quote),
-            ),
-        );
-        if (matches.length === 1) el = matches[0];
-        else el = null;
-      }
-      if (
-        el &&
-        (!msg.anchor.quote || el.textContent?.includes(msg.anchor.quote))
-      ) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        (el as HTMLElement).style.outline = "2px solid #a36f47";
-        setTimeout(() => {
-          (el as HTMLElement).style.outline = "";
-        }, 2200);
-      } else emit("anchor-missing");
+      const el = locate(msg.anchor);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      else emit("anchor-missing");
     }
   });
-  addEventListener("pointerup", (event) => {
-    if (!selecting) return;
+  // Annotations never alter the artifact's DOM structure or enter exports.
+  let annotations: { id: string; anchor: any }[] = [];
+  let overlay: HTMLElement | null = null;
+  let overlayRoot: ShadowRoot | null = null;
+  let scheduled = false;
+  const locate = (anchor: any): Element | null => {
+    if (!anchor) return null;
+    let el: Element | null = null;
+    try {
+      el = document.querySelector(anchor.selector);
+    } catch {}
+    if (el && (!anchor.quote || el.textContent?.includes(anchor.quote)))
+      return el;
+    if (!anchor.quote) return null;
+    const matches = Array.from(document.querySelectorAll("body *")).filter(
+      (node) =>
+        !["SCRIPT", "STYLE"].includes(node.tagName) &&
+        node !== overlay &&
+        node.textContent?.includes(anchor.quote) &&
+        !Array.from(node.children).some((child) =>
+          child.textContent?.includes(anchor.quote),
+        ),
+    );
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const quoteRange = (el: Element, anchor: any): Range | null => {
+    if (!anchor.quote) return null;
+    const text = el.textContent || "";
+    const needle = (anchor.prefix || "") + anchor.quote + (anchor.suffix || "");
+    const contextual = text.indexOf(needle);
+    const start =
+      contextual >= 0
+        ? contextual + (anchor.prefix || "").length
+        : text.indexOf(anchor.quote);
+    if (
+      start < 0 ||
+      (contextual < 0 && text.indexOf(anchor.quote, start + 1) >= 0)
+    )
+      return null;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    let offset = 0,
+      begun = false,
+      node: Node | null;
+    while ((node = walker.nextNode())) {
+      const length = node.textContent?.length || 0;
+      if (!begun && start < offset + length) {
+        range.setStart(node, start - offset);
+        begun = true;
+      }
+      if (begun && start + anchor.quote.length <= offset + length) {
+        range.setEnd(node, start + anchor.quote.length - offset);
+        return range;
+      }
+      offset += length;
+    }
+    return null;
+  };
+  const drawAnnotations = () => {
+    if (config.standalone || config.freeze) return;
+    if (!overlay) {
+      overlay = document.createElement("atelier-annotations");
+      overlay.style.cssText =
+        "position:fixed;inset:0;pointer-events:none;z-index:2147483646";
+      overlayRoot = overlay.attachShadow({ mode: "open" });
+      document.body.append(overlay);
+    }
+    overlayRoot!.replaceChildren();
+    const style = document.createElement("style");
+    style.textContent =
+      "button{position:fixed;pointer-events:auto;border:1px solid #bd9853;border-radius:50%;width:22px;height:22px;background:#fff4cd;color:#5b4820;font:11px system-ui;cursor:pointer} .mark{position:fixed;background:#efc45c44;box-shadow:0 1px #be943c;pointer-events:none}";
+    overlayRoot!.append(style);
+    const occupied: { x: number; y: number }[] = [];
+    annotations.forEach((comment, index) => {
+      const el = locate(comment.anchor);
+      if (!el) return;
+      const range = quoteRange(el, comment.anchor);
+      const rects = range
+        ? Array.from(range.getClientRects())
+        : [el.getBoundingClientRect()];
+      const visible = rects.filter(
+        (r) => r.bottom > 0 && r.top < innerHeight && r.width > 0,
+      );
+      if (!visible.length) return;
+      for (const r of visible) {
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
+        overlayRoot!.append(mark);
+      }
+      const last = visible[visible.length - 1];
+      const x = Math.max(0, Math.min(last.right + 5, innerWidth - 24));
+      let y = Math.max(0, Math.min(last.top, innerHeight - 24));
+      while (
+        occupied.some((p) => Math.abs(p.x - x) < 24 && Math.abs(p.y - y) < 24)
+      )
+        y += 24;
+      occupied.push({ x, y });
+      const pin = document.createElement("button");
+      pin.textContent = String(index + 1);
+      pin.setAttribute("aria-label", "Open comment " + (index + 1));
+      pin.style.left = x + "px";
+      pin.style.top = y + "px";
+      pin.addEventListener("click", (e) => {
+        e.stopPropagation();
+        emit("open-comment", { id: comment.id });
+      });
+      overlayRoot!.append(pin);
+    });
+  };
+  function scheduleAnnotations() {
+    if (scheduled || config.standalone || config.freeze) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      drawAnnotations();
+    });
+  }
+  const captureSelection = (event?: Event) => {
+    if (config.standalone || config.freeze) return;
+    if (event?.target === overlay) return;
     const selection = getSelection();
     const quote = selection?.toString().trim() ?? "";
     const common = selection?.rangeCount
@@ -386,20 +486,113 @@ function bridge(config: {
       ? common?.nodeType === 1
         ? (common as Element)
         : common?.parentElement
-      : (event.target as Element);
-    if (!target || target === document.body) return;
+      : (event?.target as Element);
+    if (
+      (!selecting && !quote) ||
+      !target ||
+      (!quote && target === document.body) ||
+      target.closest("input,textarea,[contenteditable]")
+    ) {
+      emit("selection-candidate");
+      return;
+    }
     const text = target.textContent ?? "";
-    const offset = quote ? text.indexOf(quote) : 0;
-    emit("selection", {
-      anchor: {
-        quote: (quote || text).slice(0, 5000),
-        prefix: text.slice(Math.max(0, offset - 100), offset),
-        suffix: text.slice(offset + quote.length, offset + quote.length + 100),
-        selector: path(target),
-        tag: target.tagName.toLowerCase(),
-      },
+    let offset = quote ? text.indexOf(quote) : 0;
+    if (quote && selection?.rangeCount) {
+      const before = selection.getRangeAt(0).cloneRange();
+      before.selectNodeContents(target);
+      before.setEnd(
+        selection.getRangeAt(0).startContainer,
+        selection.getRangeAt(0).startOffset,
+      );
+      const leading =
+        selection.toString().length - selection.toString().trimStart().length;
+      offset = before.toString().length + leading;
+    }
+    const anchor = {
+      quote: (quote || text).slice(0, 5000),
+      prefix: text.slice(Math.max(0, offset - 100), offset),
+      suffix: quote
+        ? text.slice(offset + quote.length, offset + quote.length + 100)
+        : "",
+      selector: path(target),
+      tag: target.tagName.toLowerCase(),
+    };
+    const rect =
+      quote && selection?.rangeCount
+        ? selection.getRangeAt(0).getBoundingClientRect()
+        : target.getBoundingClientRect();
+    emit(selecting ? "selection" : "selection-candidate", {
+      anchor,
+      x: rect.left,
+      y: rect.bottom + 8,
     });
-  });
+  };
+  if (!config.standalone && !config.freeze) {
+    addEventListener("pointerup", (event) => {
+      if (!selecting) captureSelection(event);
+    });
+    addEventListener("keyup", (event) => {
+      if (event.key.startsWith("Arrow") && event.shiftKey)
+        captureSelection(event);
+    });
+    addEventListener(
+      "click",
+      (event) => {
+        if (event.target === overlay) return;
+        if (!selecting) {
+          if (
+            getSelection()?.toString().trim() ||
+            (event.target as Element)?.closest(
+              "button,a,input,select,textarea,[contenteditable]",
+            )
+          )
+            return;
+          for (const comment of annotations) {
+            const el = locate(comment.anchor);
+            if (!el) continue;
+            const range = quoteRange(el, comment.anchor);
+            const rects = range
+              ? Array.from(range.getClientRects())
+              : [el.getBoundingClientRect()];
+            if (
+              rects.some(
+                (r) =>
+                  event.clientX >= r.left &&
+                  event.clientX <= r.right &&
+                  event.clientY >= r.top &&
+                  event.clientY <= r.bottom,
+              )
+            ) {
+              emit("open-comment", { id: comment.id });
+              return;
+            }
+          }
+          return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        captureSelection(event);
+      },
+      true,
+    );
+    addEventListener(
+      "scroll",
+      () => {
+        emit("selection-candidate");
+        scheduleAnnotations();
+      },
+      true,
+    );
+    addEventListener("resize", scheduleAnnotations);
+    const observer = new MutationObserver(scheduleAnnotations);
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    document.fonts?.ready.then(scheduleAnnotations);
+  }
   // srcdoc inherits the viewer's base URL. Handle local anchors in the
   // artifact itself instead of navigating the frame to the viewer file.
   if (parent !== window)

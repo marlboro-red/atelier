@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   Pencil,
   Trash2,
+  MoreHorizontal,
 } from "lucide-react";
 import { anchorSchema } from "../shared/schema";
 import type { Artifact, Revision, Comment, Anchor } from "../shared/schema";
@@ -53,6 +54,12 @@ function App() {
     [comments, setComments] = useState<Comment[]>([]);
   const [search, setSearch] = useState(""),
     [reviewOpen, setReviewOpen] = useState(false),
+    [activeComment, setActiveComment] = useState<string | null>(null),
+    [selectionCandidate, setSelectionCandidate] = useState<{
+      anchor: Anchor;
+      x: number;
+      y: number;
+    } | null>(null),
     [panel, setPanel] = useState<Panel>(null),
     [selecting, setSelecting] = useState(false),
     [anchor, setAnchor] = useState<Anchor | null>(null),
@@ -181,9 +188,10 @@ function App() {
     setReviewOpen(false);
     setPanel(null);
     setSelecting(false);
+    setSelectionCandidate(null);
   }
   function openPanel(next: Panel) {
-    setReviewOpen(true);
+    setReviewOpen(false);
     setPanel(next);
     setSelecting(false);
     if (next !== "source") setCompare(null);
@@ -191,7 +199,7 @@ function App() {
   function startSelection() {
     setSelecting(true);
     setPanel(null);
-    setReviewOpen(true);
+    setReviewOpen(false);
   }
   async function refresh() {
     const token = ++loading.current;
@@ -268,6 +276,8 @@ function App() {
       setSourceFile(revision.content.entry);
       setRuntimeErrors([]);
       setSelecting(false);
+      setSelectionCandidate(null);
+      setAnchor(null);
     }
   }, [revision?.artifactId, revision?.number]);
   useEffect(() => {
@@ -276,6 +286,8 @@ function App() {
   useEffect(() => {
     setReviewOpen(false);
     setPanel(null);
+    setActiveComment(null);
+    setSelectionCandidate(null);
     setBody("");
     setAnchor(null);
   }, [locationState.id]);
@@ -293,7 +305,31 @@ function App() {
         setAnchor(selection.data);
         setSelecting(false);
         setPanel("comments");
-        setReviewOpen(true);
+        setReviewOpen(false);
+        setSelectionCandidate(null);
+        setActiveComment(null);
+      }
+      if (msg.type === "selection-candidate") {
+        const candidate = anchorSchema.safeParse(msg.anchor);
+        if (
+          !candidate.success ||
+          !Number.isFinite(msg.x) ||
+          !Number.isFinite(msg.y)
+        ) {
+          setSelectionCandidate(null);
+        } else
+          setSelectionCandidate({
+            anchor: candidate.data,
+            x: Math.max(8, Math.min(msg.x, innerWidth - 120)),
+            y: Math.max(48, Math.min(msg.y + 44, innerHeight - 48)),
+          });
+      }
+      if (
+        msg.type === "open-comment" &&
+        comments.some((c) => c.id === msg.id)
+      ) {
+        setActiveComment(msg.id);
+        openPanel("comments");
       }
       if (msg.type === "runtime-error" && typeof msg.message === "string")
         setRuntimeErrors((old) =>
@@ -308,11 +344,22 @@ function App() {
           "This selection has changed. Open its original revision to locate it.",
         );
       if (msg.type === "escape") closeReview();
-      if (msg.type === "ready")
+      if (msg.type === "ready") {
         iframe.current?.contentWindow?.postMessage(
           { atelier: true, type: "selection-mode", enabled: selecting },
           "*",
         );
+        iframe.current?.contentWindow?.postMessage(
+          {
+            atelier: true,
+            type: "annotations",
+            comments: comments
+              .filter((c) => c.status !== "resolved")
+              .map((c) => ({ id: c.id, anchor: c.anchor })),
+          },
+          "*",
+        );
+      }
       if (msg.type === "save-data" && artifact) {
         try {
           await api(`/artifacts/${artifact.id}/data`, {
@@ -338,7 +385,29 @@ function App() {
     };
     addEventListener("message", listener);
     return () => removeEventListener("message", listener);
-  }, [artifact?.id, selecting]);
+  }, [artifact?.id, selecting, comments]);
+  useEffect(() => {
+    iframe.current?.contentWindow?.postMessage(
+      {
+        atelier: true,
+        type: "annotations",
+        comments: comments
+          .filter((c) => c.status !== "resolved")
+          .map((c) => ({ id: c.id, anchor: c.anchor })),
+      },
+      "*",
+    );
+  }, [comments, preview]);
+  useEffect(() => {
+    if (panel === "comments" && activeComment)
+      document
+        .getElementById("comment-" + activeComment)
+        ?.scrollIntoView({ block: "nearest" });
+    if (panel === "comments" && anchor)
+      document
+        .querySelector<HTMLTextAreaElement>(".composer textarea")
+        ?.focus();
+  }, [panel, activeComment, anchor]);
   useEffect(() => {
     iframe.current?.contentWindow?.postMessage(
       { atelier: true, type: "selection-mode", enabled: selecting },
@@ -347,12 +416,13 @@ function App() {
   }, [selecting]);
   async function addComment() {
     if (!artifact || !revision) return;
-    await api(
+    const created = await api<Comment>(
       `/artifacts/${artifact.id}/comments`,
       post({ revision: revision.number, body, anchor, author: "You" }),
     );
     setBody("");
     setAnchor(null);
+    setActiveComment(created.id);
     await refresh();
     notify("Feedback queued for your agent");
   }
@@ -392,7 +462,13 @@ function App() {
   );
   const showingArtifact = !!locationState.id;
   return (
-    <div className={showingArtifact ? "artifact-page" : "library-page"}>
+    <div
+      className={
+        showingArtifact
+          ? "artifact-page" + (panel ? " panel-open" : "")
+          : "library-page"
+      }
+    >
       {showingArtifact ? (
         <>
           {artifact &&
@@ -428,8 +504,7 @@ function App() {
               )}
               {selecting && (
                 <div className="selection-banner">
-                  <MousePointer2 size={15} /> Highlight text or select an
-                  element.
+                  <MousePointer2 size={15} /> Click an element to comment.
                   <button
                     aria-label="Cancel selection"
                     onClick={() => setSelecting(false)}
@@ -450,77 +525,65 @@ function App() {
                   {artifact.title}
                 </span>
                 <span className="version-tag">v{revision.number}</span>
-                <button
-                  className={"review-toggle " + (reviewOpen ? "active" : "")}
-                  aria-label={
-                    reviewOpen ? "Close review tools" : "Open review tools"
-                  }
-                  aria-expanded={reviewOpen}
-                  onClick={() =>
-                    reviewOpen ? closeReview() : setReviewOpen(true)
-                  }
-                >
-                  {reviewOpen ? (
-                    <X size={15} />
-                  ) : (
-                    <span className="atelier-symbol">a</span>
-                  )}
-                  {reviewOpen ? "Close" : "Review"}
-                  {runtimeErrors.length > 0 && <span className="error-dot" />}
-                </button>
+                <nav className="toolbar-actions" aria-label="Artifact actions">
+                  <button
+                    aria-label={`Comments (${comments.filter((c) => c.status !== "resolved").length})`}
+                    aria-expanded={panel === "comments"}
+                    className={panel === "comments" ? "selected" : ""}
+                    onClick={() =>
+                      openPanel(panel === "comments" ? null : "comments")
+                    }
+                  >
+                    <MessageSquare size={16} />
+                    <span>Comments</span>
+                    <b>
+                      {comments.filter((c) => c.status !== "resolved").length ||
+                        ""}
+                    </b>
+                  </button>
+                  <button
+                    aria-label="Comment on an element"
+                    title="Comment on an element"
+                    aria-pressed={selecting}
+                    onClick={() =>
+                      selecting ? setSelecting(false) : startSelection()
+                    }
+                  >
+                    <MousePointer2 size={16} />
+                  </button>
+                  <button
+                    aria-label="History"
+                    title="History"
+                    onClick={() =>
+                      openPanel(panel === "history" ? null : "history")
+                    }
+                  >
+                    <History size={16} />
+                  </button>
+                  <button
+                    aria-label="Share"
+                    onClick={() =>
+                      openPanel(panel === "share" ? null : "share")
+                    }
+                  >
+                    <Download size={16} />
+                    <span>Share</span>
+                  </button>
+                  <button
+                    aria-label="More actions"
+                    title="More actions"
+                    aria-expanded={reviewOpen}
+                    onClick={() => setReviewOpen(!reviewOpen)}
+                  >
+                    <MoreHorizontal size={18} />
+                    {runtimeErrors.length > 0 && <span className="error-dot" />}
+                  </button>
+                </nav>
                 {reviewOpen && (
                   <div className="review-menu">
-                    <header>
-                      <button
-                        className="library-link"
-                        onClick={() => navigate("")}
-                      >
-                        <ArrowLeft size={13} /> All artifacts
-                      </button>
-                      <span className="version-tag">
-                        v{revision.number}
-                        {revision.number === artifact.head ? " · latest" : ""}
-                      </span>
-                    </header>
-                    <h1>{artifact.title}</h1>
-                    <div className="review-actions">
-                      <button
-                        className={panel === "comments" ? "selected" : ""}
-                        onClick={() =>
-                          openPanel(panel === "comments" ? null : "comments")
-                        }
-                      >
-                        <MessageSquare size={17} />
-                        Comment
-                      </button>
-                      <button
-                        className={panel === "history" ? "selected" : ""}
-                        onClick={() =>
-                          openPanel(panel === "history" ? null : "history")
-                        }
-                      >
-                        <History size={17} />
-                        History
-                      </button>
-                      <button
-                        className={panel === "source" ? "selected" : ""}
-                        onClick={() =>
-                          openPanel(panel === "source" ? null : "source")
-                        }
-                      >
-                        <Code2 size={17} />
-                        Source
-                      </button>
-                      <button
-                        className={panel === "share" ? "selected" : ""}
-                        onClick={() =>
-                          openPanel(panel === "share" ? null : "share")
-                        }
-                      >
-                        <Download size={17} />
-                        Share
-                      </button>
-                    </div>
+                    <button onClick={() => openPanel("source")}>
+                      <Code2 size={14} /> Source
+                    </button>
                     <div className="artifact-management">
                       <button onClick={() => manage("rename", artifact)}>
                         <Pencil size={14} /> Rename
@@ -562,7 +625,24 @@ function App() {
                   </div>
                 )}
               </header>
-              {panel && reviewOpen && (
+              {selectionCandidate && !selecting && (
+                <button
+                  className="selection-comment"
+                  style={{
+                    left: selectionCandidate.x,
+                    top: selectionCandidate.y,
+                  }}
+                  onClick={() => {
+                    setAnchor(selectionCandidate.anchor);
+                    setSelectionCandidate(null);
+                    setActiveComment(null);
+                    openPanel("comments");
+                  }}
+                >
+                  <MessageSquare size={14} /> Comment
+                </button>
+              )}
+              {panel && (
                 <aside
                   className={
                     "review-panel " + (panel === "source" ? "source-panel" : "")
@@ -601,9 +681,9 @@ function App() {
                   {panel === "comments" ? (
                     <>
                       <div className="comment-intro">
-                        <p>Tell your agent what to change.</p>
+                        <p>Highlight text on the page to comment.</p>
                         <button onClick={startSelection}>
-                          <MousePointer2 size={14} /> Select a detail
+                          <MousePointer2 size={14} /> Select an element
                         </button>
                       </div>
                       <div className="comments-list">
@@ -626,6 +706,8 @@ function App() {
                               (c.status === "resolved" ? "resolved" : "")
                             }
                             key={c.id}
+                            id={"comment-" + c.id}
+                            data-active={activeComment === c.id}
                           >
                             <div className="comment-meta">
                               <span className="avatar">
@@ -643,7 +725,8 @@ function App() {
                             {c.anchor && (
                               <button
                                 className="quote"
-                                onClick={() =>
+                                onClick={() => {
+                                  setActiveComment(c.id);
                                   iframe.current?.contentWindow?.postMessage(
                                     {
                                       atelier: true,
@@ -651,13 +734,27 @@ function App() {
                                       anchor: c.anchor,
                                     },
                                     "*",
-                                  )
-                                }
+                                  );
+                                }}
                               >
                                 {c.anchor.quote || `<${c.anchor.tag}>`}
                               </button>
                             )}
                             <p>{c.body}</p>
+                            {history
+                              .filter((r) => r.commentIds.includes(c.id))
+                              .map((r) => (
+                                <button
+                                  className="comment-revision"
+                                  key={r.number}
+                                  onClick={() =>
+                                    navigate(artifact.id, r.number)
+                                  }
+                                >
+                                  Updated in revision {r.number}{" "}
+                                  <ArrowUpRight size={12} />
+                                </button>
+                              ))}
                             {c.replies.map((r, i) => (
                               <div className="reply" key={i}>
                                 <strong>{r.author}</strong>
