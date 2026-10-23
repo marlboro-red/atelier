@@ -8,16 +8,18 @@ import {
   revisionSchema,
   commentSchema,
 } from "../shared/schema.js";
-import { render } from "./render.js";
+import { RenderPool } from "./render-pool.js";
 import { checkPreview, type PreviewCheck } from "./check.js";
 import { renderPdf } from "./pdf.js";
 import { workspacePolicy } from "../shared/security.js";
 export function createApp(store: Store, previewPort = 4311) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
+  const renderer = new RenderPool();
   const events = new EventEmitter();
   events.setMaxListeners(100);
   const streams = new Set<ServerResponse>();
   app.addHook("preClose", async () => {
+    renderer.close();
     for (const stream of streams) stream.end();
   });
   app.addHook("onRequest", async (req, reply) => {
@@ -25,12 +27,19 @@ export function createApp(store: Store, previewPort = 4311) {
     if (!["localhost", "127.0.0.1", "atelier.localhost"].includes(host ?? ""))
       throw new HttpError(403, "Unrecognized local hostname");
     const origin = req.headers.origin;
-    if (
-      origin &&
-      origin !== `http://${req.headers.host}` &&
-      origin !== "http://127.0.0.1:5173"
-    )
+    if (origin && origin !== `http://${req.headers.host}`)
       throw new HttpError(403, "Cross-origin access denied");
+    if (
+      req.headers["sec-fetch-site"] === "cross-site" &&
+      req.headers["sec-fetch-mode"] !== "navigate"
+    )
+      throw new HttpError(403, "Cross-site resource access denied");
+    reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    );
     reply.header("Content-Security-Policy", workspacePolicy());
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
@@ -80,7 +89,12 @@ export function createApp(store: Store, previewPort = 4311) {
   const changed = (id: string) => events.emit("change", { id });
   const params = (req: any) =>
     req.params as { id: string; n: string; cid: string };
-  app.get("/api/health", async () => ({ ok: true, previewPort }));
+  app.get("/api/health", async () => ({
+    ok: true,
+    service: "atelier",
+    version: "0.1.0",
+    previewPort,
+  }));
   app.get("/api/artifacts", async () => store.list());
   app.post("/api/artifacts", async (req, reply) => {
     const a = store.create(createSchema.parse(req.body));
@@ -129,7 +143,7 @@ export function createApp(store: Store, previewPort = 4311) {
     reply.header("Cache-Control", "no-store");
     try {
       return {
-        html: await render(r.content, {
+        html: await renderer.run(r.content, {
           id,
           revision: r.number,
           data: store.data(id),
@@ -283,7 +297,7 @@ export function createApp(store: Store, previewPort = 4311) {
       })
       .parse(req.body);
     const r = store.revision(id, input.revision);
-    const html = await render(r.content, {
+    const html = await renderer.run(r.content, {
       id,
       revision: r.number,
       data: store.data(id),

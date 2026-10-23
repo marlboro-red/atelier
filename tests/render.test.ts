@@ -132,7 +132,7 @@ test("computed imports cannot glob files from the service filesystem", async () 
           },
           { id: "test", revision: 1 },
         ),
-        /Filesystem imports outside declared dependencies/,
+        /Computed imports are blocked/,
       );
     }
   } finally {

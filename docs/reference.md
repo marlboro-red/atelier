@@ -15,9 +15,9 @@ Environment variables control the service and its clients:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ATELIER_PORT` | `4310` | Browser app and API port |
-| `ATELIER_PREVIEW_PORT` | `ATELIER_PORT + 1` | Artifact preview port |
+| `ATELIER_PREVIEW_PORT` | `ATELIER_PORT + 1` | Legacy port that rejects executable preview URLs |
 | `ATELIER_DATA_DIR` | `~/.atelier` | Database directory |
-| `ATELIER_URL` | `http://127.0.0.1:4310` | Service address for CLI and MCP clients; follows `ATELIER_PORT` when set |
+| `ATELIER_URL` | `http://127.0.0.1:4310` | HTTP loopback origin for CLI and MCP clients; follows `ATELIER_PORT` when set |
 
 ## Artifacts and revisions
 
@@ -220,7 +220,7 @@ The stdio server exposes these tools:
 | `add_comment` | Adds a comment to a specified revision |
 | `reply_to_comment` | Adds a reply or changes comment status |
 
-Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution.
+Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution. Tool annotations distinguish reads from writes. Failed tool calls return `isError` and an explanation. CLI and MCP requests reject redirects and non-loopback service addresses. A request timeout tells the agent to read the saved state before retrying a publication.
 
 ### Library previews
 
@@ -268,6 +268,11 @@ Paths refer to the machine running the MCP process. Only explicitly named files 
 MCP and CLI publish results include the browser `url` and compact metadata without echoing the source. Use `get_artifact` or `atelier get` when you need the full source.
 
 ### CLI commands
+
+`atelier doctor` checks the Node version, built workspace, service identity, and whether Chromium can start. A failed check exits with code 1. `--json` returns the checks as JSON. The command does not install software or start the service.
+
+`atelier mcp-config codex`, `atelier mcp-config claude-desktop`, and `atelier mcp-config vscode` print client configuration with absolute paths and the current `ATELIER_URL`. They do not write client configuration files.
+
 
 The command prefix is `node bin/atelier.mjs`, or `atelier` after `npm link`. The following examples use `atelier`:
 
@@ -336,7 +341,7 @@ Write requests accept these fields:
 | Export | `revision`, `format` | `snapshot` |
 | Preview check | None | `revision`, `width`, `height`, `screenshot` |
 
-The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. PDF rendering allows at most two concurrent browser jobs; additional requests return `503`. A job that exceeds 30 seconds is stopped and returns `504`. The API body limit is 32 MiB.
+The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. Server-side document rendering runs in separate processes, with at most two jobs, a 30-second deadline, Node's `--max-old-space-size=384` limit per process, and a 64 MiB output limit. An overloaded renderer returns `503`. A render timeout returns `504` on export, or a preview error in the workspace. PDF rendering allows at most two concurrent browser jobs; additional requests return `503`. A job that exceeds 30 seconds is stopped and returns `504`. The API body limit is 32 MiB.
 
 ## Development commands
 
@@ -357,6 +362,8 @@ Browser tests use separate ports and `.atelier/test` data. Screenshots and failu
 
 atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
 
-Generated code runs in a sandboxed inline iframe without same-origin privileges. The workspace blocks all frame navigation, including navigation to other artifacts. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Rendered previews are delivered as JSON through the API and placed into the sandbox by the workspace; raw preview URLs cannot execute. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, filesystem loads are limited to the declared dependency graph, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated and only accepted while the user is selecting a detail.
+Generated code runs in a sandboxed inline iframe without same-origin privileges. The workspace blocks all frame navigation, including navigation to other artifacts. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Rendered previews are delivered as JSON through the API and placed into the sandbox by the workspace; raw preview URLs cannot execute. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, computed imports are rejected before compilation and filesystem loads are limited to installed dependencies, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated and only accepted while the user is selecting a detail.
 
 The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. atelier is not a security boundary between users of the computer.
+
+The [security model](security.md) describes the trusted components, resource limits, and remaining risks.

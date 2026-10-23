@@ -6,7 +6,9 @@ import {
   serializeOuter,
   type DefaultTreeAdapterMap,
 } from "parse5";
-import { posix } from "node:path";
+import { posix, resolve, relative, isAbsolute, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { validateImports } from "./imports.js";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { Marked } from "marked";
@@ -18,6 +20,10 @@ import type { Content } from "../shared/schema.js";
 import { loadCdnScript } from "./cdn.js";
 import { artifactPolicy } from "../shared/security.js";
 const require = createRequire(import.meta.url);
+const dependencies = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../node_modules",
+);
 const allowed = new Set([
   "react",
   "react-dom",
@@ -128,10 +134,7 @@ async function bundle(content: Content, entry: string, react = false) {
       {
         name: "artifact-files",
         setup(b) {
-          const dependencyFiles = new Set<string>();
-          const resolvingDependency = {};
-          b.onResolve({ filter: /.*/ }, async (args) => {
-            if (args.pluginData === resolvingDependency) return;
+          b.onResolve({ filter: /.*/ }, (args) => {
             if (
               args.namespace === "artifact" ||
               args.importer.endsWith("__bootstrap.tsx")
@@ -175,46 +178,32 @@ async function bundle(content: Content, entry: string, react = false) {
                     },
                   ],
                 };
-              const path = require.resolve(args.path);
-              dependencyFiles.add(path);
-              return { path };
+              return { path: require.resolve(args.path) };
             }
-            if (
-              args.namespace === "file" &&
-              dependencyFiles.has(args.importer)
-            ) {
-              const result = await b.resolve(args.path, {
-                importer: args.importer,
-                namespace: args.namespace,
-                resolveDir: args.resolveDir,
-                kind: args.kind,
-                with: args.with,
-                pluginData: resolvingDependency,
-              });
-              if (result.path && !result.external)
-                dependencyFiles.add(result.path);
-              return result;
-            }
-            return {
-              errors: [
-                { text: "Import is outside the artifact dependency graph" },
-              ],
-            };
+            return undefined;
           });
-          // esbuild's computed-import glob expansion bypasses onResolve. Gate
-          // filesystem reads as well as imports, including glob-generated loads.
+          // Native bundling can only read installed dependencies. Artifact files
+          // are served from memory and checked before compilation.
           b.onLoad({ filter: /.*/, namespace: "file" }, (args) => {
-            if (!dependencyFiles.has(args.path))
+            const path = relative(dependencies, args.path);
+            if (
+              isAbsolute(path) ||
+              path === ".." ||
+              path.startsWith("../") ||
+              path.startsWith("..\\")
+            )
               return {
                 errors: [
                   {
-                    text: "Filesystem imports outside declared dependencies are blocked; use literal imports for artifact files",
+                    text: "Filesystem imports outside installed dependencies are blocked",
                   },
                 ],
               };
           });
           b.onLoad({ filter: /.*/, namespace: "artifact" }, (args) => {
             const ext = posix.extname(args.path).slice(1);
+            if (["js", "jsx", "ts", "tsx"].includes(ext))
+              validateImports(content.files[args.path], args.path);
             const loader =
               (
                 {

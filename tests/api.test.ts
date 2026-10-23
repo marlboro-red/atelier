@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Store } from "../src/server/store.js";
+import { mcpConfig } from "../src/setup.js";
 import { createApp } from "../src/server/app.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -14,10 +15,12 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
   const store = new Store(dir);
   const app = createApp(store);
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const config = JSON.parse(mcpConfig("claude-desktop", address)).mcpServers
+    .atelier;
   const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [resolve("bin/atelier.mjs"), "mcp"],
-    env: { ...process.env, ATELIER_URL: address } as Record<string, string>,
+    command: config.command,
+    args: config.args,
+    env: { ...process.env, ...config.env } as Record<string, string>,
     stderr: "pipe",
   });
   const client = new Client({ name: "integration-test", version: "1.0.0" });
@@ -25,6 +28,16 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
     await client.connect(transport);
     const tools = await client.listTools();
     assert.equal(tools.tools.length, 11);
+    assert.equal(
+      tools.tools.find((t) => t.name === "get_artifact")?.annotations
+        ?.readOnlyHint,
+      true,
+    );
+    assert.equal(
+      tools.tools.find((t) => t.name === "create_artifact")?.annotations
+        ?.readOnlyHint,
+      false,
+    );
     const call = async (name: string, args: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: args });
       assert.ok(!result.isError, JSON.stringify(result));
@@ -179,6 +192,28 @@ test("MCP clients create, annotate, and revise the same artifact through the loc
       headers: { host: "evil.example" },
     });
     assert.equal(badHost.statusCode, 403);
+    for (const headers of [
+      { host: "127.0.0.1", origin: "null" },
+      { host: "127.0.0.1", origin: "http://127.0.0.1:5173" },
+      {
+        host: "127.0.0.1",
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "no-cors",
+      },
+    ]) {
+      assert.equal(
+        (await app.inject({ method: "GET", url: "/api/artifacts", headers }))
+          .statusCode,
+        403,
+      );
+    }
+    const health = await app.inject({
+      method: "GET",
+      url: "/api/health",
+      headers: { host: "127.0.0.1" },
+    });
+    assert.equal(health.headers["cross-origin-resource-policy"], "same-origin");
+    assert.equal(health.json().service, "atelier");
   } finally {
     await client.close();
     await app.close();

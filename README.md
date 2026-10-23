@@ -25,7 +25,17 @@ atelier is not published to the npm registry, so `npm install --global atelier` 
 
 The service opens [atelier](http://atelier.localhost:4310) in your browser. If that hostname does not resolve, open [127.0.0.1:4310](http://127.0.0.1:4310).
 
-Keep the terminal process running while you use atelier. `atelier start` runs in the foreground; it does not install a background service.
+Keep this terminal open. `atelier start` runs in the foreground. If atelier is already running, the command opens that service instead of starting a second copy.
+
+In a second terminal, check the installation:
+
+```sh
+atelier doctor
+```
+
+Expect `OK` for Node, the workspace, the service, and Chromium. A failed check prints the command or setting to fix.
+
+If `npm link` fails, use `node bin/atelier.mjs` in place of `atelier` from the repository directory. For example, run `node bin/atelier.mjs start`. The MCP configuration command below prints absolute paths and does not require a global link.
 
 ## Connect your agent
 
@@ -37,6 +47,8 @@ atelier provides an MCP server over stdio. It connects to the running local serv
 codex mcp add atelier -- atelier mcp
 ```
 
+See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
 ### Claude Code
 
 ```sh
@@ -47,38 +59,27 @@ This adds atelier for all your projects. Run `/mcp` in Claude Code to check the 
 
 ### Claude Desktop
 
-Open **Settings → Developer → Edit Config**. Add `atelier` to the existing `mcpServers` object, or use this configuration if the file is empty:
+Print the configuration for your installation:
 
-```json
-{
-	"mcpServers": {
-		"atelier": {
-			"command": "atelier",
-			"args": ["mcp"]
-		}
-	}
-}
+```sh
+atelier mcp-config claude-desktop
 ```
 
-Save the file and fully quit and reopen Claude Desktop. See the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers).
+Open **Settings → Developer → Edit Config** in Claude Desktop. If the file is empty, paste the output. Otherwise, copy the `atelier` entry into the existing `mcpServers` object.
+
+Fully quit and reopen Claude Desktop. The generated configuration uses absolute paths, so the desktop app does not need your terminal's PATH. See the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers).
 
 ### GitHub Copilot in VS Code
 
-Create `.vscode/mcp.json` in your project, or add `atelier` to its existing `servers` object:
+Print the configuration:
 
-```json
-{
-	"servers": {
-		"atelier": {
-			"type": "stdio",
-			"command": "atelier",
-			"args": ["mcp"]
-		}
-	}
-}
+```sh
+atelier mcp-config vscode
 ```
 
-Run **MCP: List Servers** from the Command Palette, select **atelier**, and start it. Accept the trust prompt, then use Copilot in Agent mode with the atelier tools enabled. See [VS Code's MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
+Create `.vscode/mcp.json` in the project where you use Copilot and paste the output. If that file exists, copy the `atelier` entry into its `servers` object.
+
+Run **MCP: List Servers** from the Command Palette. Start **atelier** and accept the trust prompt. Use Copilot in Agent mode with the atelier tools enabled. See [VS Code's MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
 ### GitHub Copilot CLI
 
@@ -88,15 +89,15 @@ copilot mcp add atelier -- atelier mcp
 
 ### If the client cannot find atelier
 
-Desktop apps may not inherit your terminal's PATH. On Windows, using Node directly also avoids relying on an npm command shim.
+Use the generated configuration instead of a bare `atelier` command. The command prints your Node executable and the path to `bin/atelier.mjs`:
 
-Run `node -p "process.execPath"` to find Node, and `npm root --global` to find your global packages directory. In the client configuration, replace `command` with the absolute Node path and use:
-
-```json
-"args": ["/absolute/global/packages/atelier/bin/atelier.mjs", "mcp"]
+```sh
+node bin/atelier.mjs mcp-config codex
 ```
 
-You can also point directly to `bin/atelier.mjs` in your cloned repository. Escape Windows backslashes as `\\` in JSON, or use forward slashes.
+Run this command from the repository directory. Merge the output into Codex's `config.toml`. Use `claude-desktop` or `vscode` for JSON configuration. The command prints configuration and does not edit client files.
+
+If you move the repository or replace Node, generate the configuration again. For service connection errors, run `atelier doctor` and check that `atelier start` is still running.
 
 ### Add authoring guidance (optional)
 
@@ -137,5 +138,7 @@ Open the revision you want to share. Click **Review**, then **Share**.
 Exports exclude atelier's review controls. Custom controls need the [export state API](docs/reference.md#artifact-state) to retain their state. PDF pagination can change the layout.
 
 atelier runs on your computer. Public hosting, team collaboration, and video are not supported.
+
+See the [security model and limits](docs/security.md) before using untrusted content.
 
 See the [reference](docs/reference.md) for artifact formats, supported libraries, configuration, agent tools, and development commands.
