@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
+import { access, stat } from "node:fs/promises";
+import { constants } from "node:fs";
 import type { Adapter } from "./adapters.js";
 import { SocketRpc } from "./socket-rpc.js";
 
@@ -65,19 +67,38 @@ export async function listCodexSessions(path = codexSocket()) {
 }
 
 const execute = promisify(execFile);
+// Launch agents do not inherit the interactive shell's PATH. Resolve once and
+// keep the checked absolute executable for the lifetime of this connection.
+export async function codexExecutable(
+  searchPath = process.env.PATH ?? "",
+  home = homedir(),
+) {
+  const name = process.platform === "win32" ? "codex.exe" : "codex";
+  const directories = [
+    ...searchPath.split(delimiter).filter(isAbsolute),
+    join(home, ".local", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ];
+  for (const directory of new Set(directories)) {
+    const candidate = join(directory, name);
+    try {
+      await access(candidate, constants.X_OK);
+      if ((await stat(candidate)).isFile()) return candidate;
+    } catch {
+      // Try the next installation location, never a relative workspace path.
+    }
+  }
+  throw new Error(
+    "Cannot find the Codex executable. Install Codex in ~/.local/bin or add its installation directory to the atelier service PATH, then reconnect.",
+  );
+}
+
 export async function connectCodexSession(
   options: { session: string; cwd: string; socket?: string },
-  dependencies = {
-    rpc: (path: string) => new SocketRpc(path),
-    queue: async (args: string[], cwd: string, signal: AbortSignal) => {
-      await execute("codex", args, {
-        cwd,
-        signal,
-        timeout: 30_000,
-        maxBuffer: 64 * 1024,
-        shell: false,
-      });
-    },
+  dependencies?: {
+    rpc: (path: string) => SocketRpc;
+    queue: (args: string[], cwd: string, signal: AbortSignal) => Promise<void>;
   },
 ): Promise<Adapter> {
   if (
@@ -90,8 +111,37 @@ export async function connectCodexSession(
     );
   if (options.socket && !isAbsolute(options.socket))
     throw new Error("--codex-socket must be an absolute local socket path");
+  if (!dependencies) {
+    const executable = await codexExecutable();
+    // Fail before advertising a connection if this CLI cannot deliver feedback.
+    try {
+      await execute(executable, ["queue", "--help"], {
+        cwd: options.cwd,
+        timeout: 5000,
+        maxBuffer: 64 * 1024,
+        shell: false,
+      });
+    } catch {
+      throw new Error(
+        "Codex queue is unavailable. Update Codex and reconnect.",
+      );
+    }
+    dependencies = {
+      rpc: (path) => new SocketRpc(path),
+      queue: async (args, cwd, signal) => {
+        await execute(executable, args, {
+          cwd,
+          signal,
+          timeout: 30_000,
+          maxBuffer: 64 * 1024,
+          shell: false,
+        });
+      },
+    };
+  }
+  const transport = dependencies;
   const path = options.socket ?? codexSocket();
-  const rpc = dependencies.rpc(path);
+  const rpc = transport.rpc(path);
   const controller = new AbortController();
   const check = async () => {
     const result = await rpc.request(
@@ -137,7 +187,7 @@ export async function connectCodexSession(
     send: async (prompt) => {
       controller.signal.throwIfAborted();
       await check();
-      await dependencies.queue(
+      await transport.queue(
         [
           "queue",
           "--remote",

@@ -171,3 +171,63 @@ test("the local Codex connection uses WebSocket frames and leaves the server run
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("service discovery finds a user installation with a restricted PATH and skips relative paths", async () => {
+  const { codexExecutable } = await import("../src/agents/codex-queue.js");
+  const { mkdtemp, mkdir, writeFile, chmod, rm } =
+    await import("node:fs/promises");
+  const { join, delimiter } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const home = await mkdtemp(join(tmpdir(), "atelier-cli-"));
+  const name = process.platform === "win32" ? "codex.exe" : "codex";
+  const install = join(home, ".local", "bin");
+  const preferred = join(home, "custom-bin");
+  try {
+    await mkdir(install, { recursive: true });
+    await mkdir(preferred);
+    const executable = join(install, name);
+    await writeFile(executable, "#!/bin/sh\nexit 0\n");
+    await chmod(executable, 0o755);
+    assert.equal(await codexExecutable("/usr/bin:/bin", home), executable);
+    assert.equal(
+      await codexExecutable([".", "", "relative/bin"].join(delimiter), home),
+      executable,
+    );
+    await writeFile(join(preferred, name), "#!/bin/sh\nexit 0\n");
+    await chmod(join(preferred, name), 0o755);
+    assert.equal(await codexExecutable(preferred, home), join(preferred, name));
+    // A directory named codex must never count as an executable.
+    await rm(join(preferred, name));
+    await mkdir(join(preferred, name));
+    assert.equal(await codexExecutable(preferred, home), executable);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("an unusable queue command fails before opening a Codex connection", async () => {
+  if (process.platform === "win32") return;
+  const { mkdtemp, writeFile, chmod, rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const directory = await mkdtemp(join(tmpdir(), "atelier-old-cli-"));
+  const previous = process.env.PATH;
+  try {
+    const executable = join(directory, "codex");
+    await writeFile(executable, "#!/bin/sh\nexit 2\n");
+    await chmod(executable, 0o755);
+    process.env.PATH = directory;
+    await assert.rejects(
+      connectCodexSession({
+        session: id,
+        cwd: directory,
+        socket: join(directory, "absent.sock"),
+      }),
+      /Codex queue is unavailable/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.PATH;
+    else process.env.PATH = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
