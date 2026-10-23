@@ -300,7 +300,18 @@ button svg {
   color: #8a9b72;
 }
 .selection-banner button {
-  padding: 0;
+  padding: 4px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.selection-banner button[aria-pressed="true"] {
+  background: #e1e8d8;
+  color: #394831;
+}
+@media (max-width: 600px) {
+  .selection-banner > span {
+    display: none;
+  }
 }
 .source-panel {
   width: 1000px;

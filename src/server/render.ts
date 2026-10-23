@@ -241,6 +241,9 @@ function bridge(config: {
 }) {
   const w = window as any;
   let selecting = false;
+  let selectionScope = "element";
+  let hovered: Element | null = null;
+  let inspector: HTMLElement | null = null;
   let state = config.snapshot?.state ?? null;
   let data = config.data;
   const pending = new Map();
@@ -332,7 +335,11 @@ function bridge(config: {
     if (event.source !== parent || !event.data?.atelier) return;
     const msg = event.data;
     if (msg.type === "selection-mode") {
-      selecting = msg.enabled;
+      selecting = msg.enabled === true && !config.standalone && !config.freeze;
+      selectionScope = msg.scope === "section" ? "section" : "element";
+      getSelection()?.removeAllRanges();
+      hovered = null;
+      drawInspector();
       document.documentElement.style.cursor = selecting ? "crosshair" : "";
     }
     if (msg.type === "snapshot")
@@ -474,11 +481,63 @@ function bridge(config: {
       drawAnnotations();
     });
   }
+  const sectionTarget = (element: Element): Element => {
+    const semantic = element.closest(
+      "section,article,figure,fieldset,[role=region],[data-atelier-section]",
+    );
+    if (semantic) return semantic;
+    // A card/grid container remains selectable even without semantic markup.
+    let target = element;
+    while (target.parentElement && target.parentElement !== document.body) {
+      target = target.parentElement;
+      if (target.children.length > 1) return target;
+    }
+    return target;
+  };
+  const elementTarget = (element: Element) =>
+    element.closest("svg,picture,canvas,img") ?? element;
+  function drawInspector() {
+    if (config.standalone || config.freeze) return;
+    if (!selecting || !hovered?.isConnected) {
+      inspector?.remove();
+      inspector = null;
+      return;
+    }
+    if (!inspector) {
+      inspector = document.createElement("atelier-selection-highlight");
+      inspector.style.cssText =
+        "position:fixed;pointer-events:none;z-index:2147483647";
+      inspector.attachShadow({ mode: "open" });
+      document.body.append(inspector);
+    }
+    const rect = hovered.getBoundingClientRect();
+    const box = document.createElement("div");
+    box.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;box-sizing:border-box;border:2px solid #4169df;background:#4169df18;border-radius:3px;pointer-events:none`;
+    const label = document.createElement("span");
+    label.textContent = selectionLabel(hovered);
+    label.style.cssText = `position:fixed;left:${Math.max(4, rect.left)}px;top:${Math.max(4, rect.top - 24)}px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px;background:#4169df;color:white;border-radius:3px;font:12px system-ui;pointer-events:none`;
+    inspector.shadowRoot!.replaceChildren(box, label);
+  }
+  function selectionLabel(target: Element) {
+    const name =
+      target.getAttribute("aria-label") ||
+      target.getAttribute("alt") ||
+      target
+        .querySelector("h1,h2,h3,h4,figcaption,legend,title")
+        ?.textContent?.trim() ||
+      target.textContent?.trim().slice(0, 160) ||
+      target.id ||
+      target.tagName.toLowerCase();
+    return `${selectionScope === "section" ? "Section" : "Element"}: ${name}`.slice(
+      0,
+      200,
+    );
+  }
   const captureSelection = (event?: Event) => {
     if (config.standalone || config.freeze) return;
-    if (event?.target === overlay) return;
+    if (event?.target === overlay || event?.target === inspector) return;
     const selection = getSelection();
-    const quote = selection?.toString().trim() ?? "";
+    const quote = selecting ? "" : (selection?.toString().trim() ?? "");
     const common = selection?.rangeCount
       ? selection.getRangeAt(0).commonAncestorContainer
       : null;
@@ -486,12 +545,12 @@ function bridge(config: {
       ? common?.nodeType === 1
         ? (common as Element)
         : common?.parentElement
-      : (event?.target as Element);
+      : (hovered ?? (event?.target as Element));
     if (
       (!selecting && !quote) ||
       !target ||
       (!quote && target === document.body) ||
-      target.closest("input,textarea,[contenteditable]")
+      (!selecting && target.closest("input,textarea,[contenteditable]"))
     ) {
       emit("selection-candidate");
       return;
@@ -510,7 +569,9 @@ function bridge(config: {
       offset = before.toString().length + leading;
     }
     const anchor = {
-      quote: (quote || text).slice(0, 5000),
+      kind: selecting ? selectionScope : "text",
+      ...(selecting ? { label: selectionLabel(target) } : {}),
+      quote: quote.slice(0, 5000),
       prefix: text.slice(Math.max(0, offset - 100), offset),
       suffix: quote
         ? text.slice(offset + quote.length, offset + quote.length + 100)
@@ -529,6 +590,66 @@ function bridge(config: {
     });
   };
   if (!config.standalone && !config.freeze) {
+    addEventListener("pointermove", (event) => {
+      if (
+        !selecting ||
+        !(event.target instanceof Element) ||
+        event.target === overlay ||
+        event.target === inspector
+      )
+        return;
+      const candidate =
+        selectionScope === "section"
+          ? sectionTarget(event.target)
+          : elementTarget(event.target);
+      if (candidate !== hovered) {
+        hovered = candidate;
+        drawInspector();
+      }
+    });
+    addEventListener(
+      "keydown",
+      (event) => {
+        if (!selecting) return;
+        if (event.key === "Escape") {
+          selecting = false;
+          drawInspector();
+          emit("selection-cancel");
+        } else if (
+          event.key === "ArrowUp" &&
+          hovered?.parentElement &&
+          hovered.parentElement !== document.body
+        ) {
+          event.preventDefault();
+          hovered = hovered.parentElement;
+          drawInspector();
+        } else if (event.key === "Enter" && hovered) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          captureSelection();
+        }
+      },
+      true,
+    );
+    addEventListener(
+      "pointerdown",
+      (event) => {
+        if (
+          !selecting ||
+          !(event.target instanceof Element) ||
+          event.target === overlay
+        )
+          return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hovered =
+          selectionScope === "section"
+            ? sectionTarget(event.target)
+            : elementTarget(event.target);
+        drawInspector();
+      },
+      true,
+    );
     addEventListener("pointerup", (event) => {
       if (!selecting) captureSelection(event);
     });
@@ -581,10 +702,14 @@ function bridge(config: {
       () => {
         emit("selection-candidate");
         scheduleAnnotations();
+        drawInspector();
       },
       true,
     );
-    addEventListener("resize", scheduleAnnotations);
+    addEventListener("resize", () => {
+      scheduleAnnotations();
+      drawInspector();
+    });
     const observer = new MutationObserver(scheduleAnnotations);
     observer.observe(document.documentElement, {
       childList: true,

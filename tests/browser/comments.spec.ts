@@ -217,3 +217,107 @@ test("mobile comments use a compact popup and show connection state in the threa
     "No agent connected",
   );
 });
+
+test("non-text elements and whole sections have visible targets and persistent comment anchors", async ({
+  page,
+  request,
+}) => {
+  const result = await request.post("/api/artifacts", {
+    data: {
+      title: "Visual targets",
+      content: {
+        kind: "html",
+        entry: "index.html",
+        files: {
+          "index.html": `
+      <main style="padding:70px 30px"><section id="forecast" style="padding:30px;border:1px solid #ccc;max-width:600px">
+      <h2>Weekly forecast</h2><p>A chart and a control.</p>
+      <svg id="chart" aria-label="Tide chart" width="240" height="100"><rect id="bar" x="10" y="10" width="80" height="80" fill="blue"/></svg>
+      <canvas id="canvas" aria-label="Wave simulation" width="120" height="100" style="background:#ded"></canvas>
+      <button onclick="this.textContent='Activated'">Run simulation</button></section></main>`,
+        },
+      },
+    },
+  });
+  const a = await result.json();
+  await page.goto("/a/" + a.id);
+  const frame = page.frameLocator("iframe");
+  const select = page.getByRole("button", { name: "Comment on an element" });
+  await select.click();
+  await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
+  await frame.locator("#bar").hover();
+  await expect(frame.locator("atelier-selection-highlight")).toContainText(
+    "Tide chart",
+  );
+  await frame.locator("#bar").click();
+  await expect(page.locator(".selected-quote")).toContainText(
+    "Element: Tide chart",
+  );
+  await page
+    .getByLabel("Comment", { exact: true })
+    .fill("Change the chart colors");
+  await page.getByRole("button", { name: "Send comment" }).click();
+  await expect(page.getByRole("dialog", { name: "New comment" })).toHaveCount(
+    0,
+  );
+  await select.click();
+  await page.getByRole("button", { name: "Section", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Section", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await frame.locator("#bar").hover();
+  await expect(frame.locator("atelier-selection-highlight")).toContainText(
+    "Section: Weekly forecast",
+  );
+  await frame.getByRole("button", { name: "Run simulation" }).click();
+  await expect(
+    frame.getByRole("button", { name: "Run simulation" }),
+  ).toBeVisible();
+  await expect(page.locator(".selected-quote")).toContainText(
+    "Section: Weekly forecast",
+  );
+  await page
+    .getByLabel("Comment", { exact: true })
+    .fill("Rearrange this section");
+  await page.getByRole("button", { name: "Send comment" }).click();
+  await expect(page.getByRole("dialog", { name: "New comment" })).toHaveCount(
+    0,
+  );
+  const comments = await (
+    await request.get(`/api/artifacts/${a.id}/comments`)
+  ).json();
+  expect(comments[0].anchor).toMatchObject({
+    kind: "element",
+    quote: "",
+    selector: "#chart",
+    label: "Element: Tide chart",
+  });
+  expect(comments[1].anchor).toMatchObject({
+    kind: "section",
+    quote: "",
+    selector: "#forecast",
+  });
+  await page.reload();
+  await expect(
+    frame.getByRole("button", { name: "Open comment 2" }),
+  ).toBeVisible();
+  const mark = await frame
+    .locator("atelier-annotations .mark")
+    .last()
+    .boundingBox();
+  const section = await frame.locator("#forecast").boundingBox();
+  expect(mark!.width).toBeCloseTo(section!.width, 0);
+  expect(mark!.height).toBeCloseTo(section!.height, 0);
+  await select.click();
+  await page.getByRole("button", { name: "Element", exact: true }).click();
+  await frame.locator("#canvas").hover();
+  await expect(frame.locator("atelier-selection-highlight")).toContainText(
+    "Wave simulation",
+  );
+  await frame.locator("#canvas").click();
+  await expect(page.locator(".selected-quote")).toContainText(
+    "Element: Wave simulation",
+  );
+  await page.getByRole("button", { name: "Close comment" }).click();
+  await expect(frame.locator("atelier-selection-highlight")).toHaveCount(0);
+});

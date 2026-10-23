@@ -102,6 +102,9 @@ function App() {
     } | null>(null),
     [panel, setPanel] = useState<Panel>(null),
     [selecting, setSelecting] = useState(false),
+    [selectionScope, setSelectionScope] = useState<"element" | "section">(
+      "element",
+    ),
     [anchor, setAnchor] = useState<Anchor | null>(null),
     [body, setBody] = useState(""),
     [error, setError] = useState(""),
@@ -343,6 +346,10 @@ function App() {
       )
         return;
       const msg = event.data;
+      if (msg.type === "selection-cancel") {
+        setSelecting(false);
+        return;
+      }
       if (msg.type === "selection") {
         const selection = anchorSchema.safeParse(msg.anchor);
         if (!selecting || !selection.success) return;
@@ -396,7 +403,12 @@ function App() {
       if (msg.type === "escape") closeReview();
       if (msg.type === "ready") {
         iframe.current?.contentWindow?.postMessage(
-          { atelier: true, type: "selection-mode", enabled: selecting },
+          {
+            atelier: true,
+            type: "selection-mode",
+            enabled: selecting,
+            scope: selectionScope,
+          },
           "*",
         );
         iframe.current?.contentWindow?.postMessage(
@@ -435,7 +447,7 @@ function App() {
     };
     addEventListener("message", listener);
     return () => removeEventListener("message", listener);
-  }, [artifact?.id, selecting, comments]);
+  }, [artifact?.id, selecting, selectionScope, comments]);
   useEffect(() => {
     iframe.current?.contentWindow?.postMessage(
       {
@@ -460,10 +472,15 @@ function App() {
   }, [panel, activeComment, anchor, composerPosition]);
   useEffect(() => {
     iframe.current?.contentWindow?.postMessage(
-      { atelier: true, type: "selection-mode", enabled: selecting },
+      {
+        atelier: true,
+        type: "selection-mode",
+        enabled: selecting,
+        scope: selectionScope,
+      },
       "*",
     );
-  }, [selecting]);
+  }, [selecting, selectionScope]);
   async function addComment() {
     if (!artifact || !revision || sending) return;
     setSending(true);
@@ -531,7 +548,7 @@ function App() {
     <div className="composer">
       {anchor && (
         <div className="selected-quote">
-          <span>{anchor.quote || `<${anchor.tag}>`}</span>
+          <span>{anchor.label || anchor.quote || `<${anchor.tag}>`}</span>
           <button aria-label="Clear selection" onClick={() => setAnchor(null)}>
             <X size={13} />
           </button>
@@ -606,7 +623,20 @@ function App() {
               )}
               {selecting && (
                 <div className="selection-banner">
-                  <MousePointer2 size={15} /> Click an element to comment.
+                  <MousePointer2 size={15} />
+                  <span>Choose what to comment on</span>
+                  <button
+                    aria-pressed={selectionScope === "element"}
+                    onClick={() => setSelectionScope("element")}
+                  >
+                    Element
+                  </button>
+                  <button
+                    aria-pressed={selectionScope === "section"}
+                    onClick={() => setSelectionScope("section")}
+                  >
+                    Section
+                  </button>
                   <button
                     aria-label="Cancel selection"
                     onClick={() => setSelecting(false)}
@@ -961,7 +991,9 @@ function App() {
                                   );
                                 }}
                               >
-                                {c.anchor.quote || `<${c.anchor.tag}>`}
+                                {c.anchor.label ||
+                                  c.anchor.quote ||
+                                  `<${c.anchor.tag}>`}
                               </button>
                             )}
                             <p>{c.body}</p>

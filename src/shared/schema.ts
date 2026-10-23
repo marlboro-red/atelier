@@ -38,6 +38,8 @@ export const revisionSchema = z.object({
   commentIds: z.array(z.string()).default([]),
 });
 export const anchorSchema = z.object({
+  kind: z.enum(["text", "element", "section"]).optional(),
+  label: z.string().max(200).optional(),
   quote: z.string().max(5000),
   prefix: z.string().max(200).default(""),
   suffix: z.string().max(200).default(""),
