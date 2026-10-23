@@ -486,7 +486,7 @@ button svg {
   border-radius: 50%;
 }
 .library-heading {
-  padding: 65px 0 48px;
+  padding: 40px 0 28px;
 }
 .eyebrow {
   font-size: 9px;
@@ -497,9 +497,9 @@ button svg {
   font:
     54px/1.14 Georgia,
     serif;
-  letter-spacing: -1.8px;
+  letter-spacing: -0.8px;
   font-weight: 400;
-  margin: 25px 0 22px;
+  margin: 0 0 12px;
 }
 .library-heading h1 em {
   color: #8d9b7a;
@@ -920,7 +920,7 @@ button svg {
     padding: 45px 0 30px;
   }
   .library-heading h1 {
-    font-size: 43px;
+    font-size: 32px;
   }
   .library-heading p {
     font-size: 12px;

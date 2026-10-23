@@ -441,7 +441,7 @@ function App() {
                     <h2>
                       {
                         {
-                          comments: "Conversation",
+                          comments: "Comments",
                           history: "Version history",
                           source: "Source",
                           share: "Share this revision",
@@ -471,13 +471,12 @@ function App() {
                         {!comments.length && (
                           <div className="empty-comments">
                             <MessageSquare size={27} strokeWidth={1} />
-                            <h3>Make it a conversation.</h3>
+                            <h3>No comments yet</h3>
                             <p>
-                              Select a detail in the preview, or leave a thought
-                              below.
+                              Select text or an element, or add a comment below.
                             </p>
                             <button onClick={startSelection}>
-                              <MousePointer2 size={14} /> Select something
+                              <MousePointer2 size={14} /> Select an element
                             </button>
                           </div>
                         )}
@@ -640,7 +639,7 @@ function App() {
                   ) : panel === "history" ? (
                     <>
                       <p className="panel-description">
-                        One artifact. Every revision.
+                        Previous revisions are preserved.
                       </p>
                       <div className="history-list">
                         {history.map((r) => (
@@ -803,17 +802,8 @@ function App() {
             </span>
           </header>
           <div className="library-heading">
-            <div className="eyebrow">MADE WITH YOUR AGENT</div>
-            <h1>
-              A home for
-              <br />
-              <em>what takes shape.</em>
-            </h1>
-            <p>
-              Your agent creates. You explore, leave feedback, and share.
-              <br />
-              Every artifact is a page of its own.
-            </p>
+            <h1>Artifacts</h1>
+            <p>View, comment on, and export artifacts created by your agent.</p>
           </div>
           {artifacts.length > 0 ? (
             <>
@@ -856,27 +846,10 @@ function App() {
             </>
           ) : (
             <section className="empty-library">
-              <div className="empty-art">
-                <span />
-                <span />
-                <span />
-              </div>
-              <h2>Your next idea starts with your agent.</h2>
-              <p>
-                Ask your connected agent to make something in Atelier.
-                <br />
-                It will appear here when it’s ready.
-              </p>
-              <blockquote>
-                “Create an interactive report in Atelier with text, charts, and
-                a diagram.”
-              </blockquote>
+              <h2>No artifacts yet</h2>
+              <p>Ask your connected agent to create an artifact in Atelier.</p>
             </section>
           )}
-          <footer className="library-footer">
-            <span>One page. Any combination of ideas.</span>
-            <span>Text · diagrams · charts · images · motion</span>
-          </footer>
         </main>
       )}
       {error && (
