@@ -8,7 +8,7 @@ The service binds to `127.0.0.1`. MCP responses use `atelier.localhost` for brow
 
 The default database is `~/.atelier/atelier.sqlite`. SQLite stores artifact metadata, complete source revisions, comments, and app data. Revision content and metadata commit in one transaction. A file-copy backup requires the service to be stopped and the complete data directory to be copied.
 
-The `start` command runs in the foreground and opens the browser. `start --no-open` and `npm start` run without opening the browser. `npm link` makes the `atelier` command available globally. `atelier install-browser` installs Chromium for PDF export. See the [installation guide](../README.md#install-and-start) for ZIP and terminal installs.
+The `start` command runs in the foreground and opens the browser. `start --no-open` and `npm start` run without opening the browser. `npm link` makes the `atelier` command available globally. `atelier install-browser` installs Chromium for PDF export. See the [installation guide](../README.md#install-and-start) for setup instructions.
 
 Environment variables control the service and its clients:
 

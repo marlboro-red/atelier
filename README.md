@@ -6,40 +6,20 @@ Agents create and revise the content through MCP, the CLI, or the HTTP API. You 
 
 ## Install and start
 
-Requires Node.js 22.13 or later and npm.
-
-### Download a ZIP
-
-No Git required:
-
-1. [Download the source ZIP](https://github.com/marlboro-red/atelier/archive/refs/heads/main.zip) and extract it.
-2. Open a terminal in the extracted `atelier-main` directory.
-3. Install and start:
-
-   ```sh
-   npm install
-   npm link
-   atelier install-browser
-   atelier start
-   ```
-
-Atelier is not published to the npm registry, so `npm install --global atelier` is not supported.
-
-`npm install` builds the browser app automatically. Keep the extracted directory: `npm link` points the global command to it. These commands also work in a cloned repository.
-
-### Download from the terminal
-
-On macOS or Linux, you can download and extract the same ZIP without opening GitHub:
+Requires Git, Node.js 22.13 or later, and npm.
 
 ```sh
-curl --fail --location https://github.com/marlboro-red/atelier/archive/refs/heads/main.zip --output atelier.zip
-unzip atelier.zip
-cd atelier-main
+git clone https://github.com/marlboro-red/atelier.git
+cd atelier
 npm install
 npm link
 atelier install-browser
 atelier start
 ```
+
+`npm install` builds the browser app automatically. `npm link` makes the `atelier` command available globally and points it to this directory. Skip `atelier install-browser` if you do not need PDF exports.
+
+Atelier is not published to the npm registry, so `npm install --global atelier` is not supported.
 
 ### Open Atelier
 
@@ -116,7 +96,7 @@ Run `node -p "process.execPath"` to find Node, and `npm root --global` to find y
 "args": ["/absolute/global/packages/atelier/bin/atelier.mjs", "mcp"]
 ```
 
-For a ZIP install or clone, you can instead point to `bin/atelier.mjs` in that directory. Escape Windows backslashes as `\\` in JSON, or use forward slashes.
+You can also point directly to `bin/atelier.mjs` in your cloned repository. Escape Windows backslashes as `\\` in JSON, or use forward slashes.
 
 ### Create your first artifact
 
