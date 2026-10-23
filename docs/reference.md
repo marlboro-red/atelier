@@ -221,6 +221,31 @@ The stdio server exposes these tools:
 
 Create, get, revise, restore, and duplicate results include a browser URL. MCP write tools require an `author` for attribution.
 
+### File inputs for MCP
+
+`create_artifact` and `revise_artifact` accept exactly one source form:
+
+- `content`: the existing inline content object.
+- `filePath`: an absolute path to a source file or an existing JSON content manifest.
+- `filePaths`: a map of artifact-relative names to absolute local paths, with an `entry` name and optional `kind`.
+
+```json
+{
+	"title": "Report",
+	"author": "My agent",
+	"entry": "index.html",
+	"filePaths": {
+		"index.html": "/work/report/index.html",
+		"styles.css": "/work/report/styles.css",
+		"assets/chart.png": "/work/report/chart.png"
+	}
+}
+```
+
+Paths refer to the machine running the MCP process. Only explicitly named files are read; imports and directories are not collected automatically. Images and font binaries become data URLs. File inputs have a combined 30 MiB JSON budget and the same 100-file limit as inline content. The HTTP service still accepts content, not disk paths.
+
+MCP and CLI publish results include the browser `url` and compact metadata without echoing the source. Use `get_artifact` or `atelier get` when you need the full source.
+
 ### CLI commands
 
 The command prefix is `node bin/atelier.mjs`, or `atelier` after `npm link`. The following examples use `atelier`:
@@ -236,7 +261,14 @@ atelier history ARTIFACT_ID
 atelier export ARTIFACT_ID --format html --output report.html
 ```
 
-The `create` and `revise` commands accept a source file or a JSON content object. A source file becomes a single-file artifact. The CLI does not collect its relative imports; a JSON content object carries multiple files.
+The `create` and `revise` commands accept a source file or an existing JSON content manifest. Add files directly with repeated `--file` flags; no manifest is required:
+
+```sh
+atelier create report/index.html --title "Report" --file report/styles.css --file assets/chart.png=images/chart.png
+atelier revise ARTIFACT_ID report/index.html --base 1 --message "Update chart" --file report/styles.css --file assets/chart.png=images/chart.png
+```
+
+Without a mapping, each additional file keeps its path relative to the entry file's directory. With `artifact/name=local/path`, the left side names it inside the artifact. Use `--entry` to override the entry name and `--kind` to override format inference. Include all files again when revising; the file set is replaced as a whole.
 
 ### HTTP API
 

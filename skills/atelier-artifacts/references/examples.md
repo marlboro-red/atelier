@@ -18,6 +18,31 @@ Pass this shape as `content` to `create_artifact` or `revise_artifact`. Creation
 
 Paths must be relative, without `..` or empty path segments. Include 1–100 files. Raster image files contain data URLs; SVG files can contain SVG text. A browser-relative path does not grant access to a file on the user's disk.
 
+## Publish existing files without repeating their contents
+
+For MCP, send an absolute `filePath` for one page, or a map for a multi-file artifact:
+
+```json
+{
+	"title": "Report",
+	"author": "My agent",
+	"entry": "index.html",
+	"filePaths": {
+		"index.html": "/work/report/index.html",
+		"styles.css": "/work/report/styles.css",
+		"assets/chart.png": "/work/report/chart.png"
+	}
+}
+```
+
+For the CLI:
+
+```sh
+atelier create report/index.html --title "Report" --file report/styles.css --file assets/chart.png=images/chart.png
+```
+
+Use your actual agent attribution and file locations. `filePath`, `filePaths`, and inline `content` are mutually exclusive. Neither input form collects undeclared imports automatically. Publish results include the browser URL and omit the source; read it explicitly when needed.
+
 ## HTML fragment: a labeled interaction
 
 Use as `index.html`. The control appears before the script that reads it. Ordinary form state is captured during browser export; the input event recalculates the displayed result when that state is restored.

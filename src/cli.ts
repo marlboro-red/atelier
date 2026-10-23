@@ -1,13 +1,14 @@
 import { Command } from "commander";
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, resolve, dirname } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { resolve, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { contentSchema, anchorSchema } from "./shared/schema.js";
+import { anchorSchema } from "./shared/schema.js";
+import { contentInput, readContentInput, cliContentInput } from "./inputs.js";
 const base =
   process.env.ATELIER_URL ??
   `http://127.0.0.1:${process.env.ATELIER_PORT ?? 4310}`;
@@ -99,37 +100,45 @@ program
       ),
     );
   });
-async function readContent(file: string, kind?: string) {
-  if (file.endsWith(".json"))
-    return contentSchema.parse(JSON.parse(await readFile(file, "utf8")));
-  const inferred =
-    kind ??
-    (file.endsWith(".md")
-      ? "markdown"
-      : file.endsWith(".svg")
-        ? "svg"
-        : file.endsWith(".html")
-          ? "html"
-          : "react");
-  return contentSchema.parse({
-    kind: inferred,
-    entry: basename(file),
-    files: { [basename(file)]: await readFile(file, "utf8") },
-  });
+function publishResult(result: any, id = result.id ?? result.artifactId) {
+  const { content: _content, ...metadata } = result;
+  return { ...metadata, url: `${browserBase}/a/${segment(id)}` };
 }
+async function mcpContent(args: any) {
+  const paths = args.filePaths
+    ? Object.values(args.filePaths)
+    : args.filePath
+      ? [args.filePath]
+      : [];
+  if (paths.some((path) => typeof path !== "string" || !isAbsolute(path)))
+    throw new Error(
+      "MCP file paths must be absolute paths accessible to the MCP process",
+    );
+  return readContentInput(args);
+}
+const appendFile = (value: string, previous: string[]) => [...previous, value];
 program
   .command("create <file>")
   .requiredOption("-t, --title <title>")
   .option("-k, --kind <kind>")
+  .option("--entry <name>", "Artifact-relative entry name")
+  .option(
+    "--file <path-or-mapping>",
+    "Include a file; optionally artifact/name=local/path. Repeat for more files.",
+    appendFile,
+    [],
+  )
   .option("--author <author>", "Agent attribution", "Agent")
   .description("Create from a source file or content JSON manifest")
   .action(async (file, options) =>
     print(
-      await request("/artifacts", "POST", {
-        title: options.title,
-        author: options.author,
-        content: await readContent(file, options.kind),
-      }),
+      publishResult(
+        await request("/artifacts", "POST", {
+          title: options.title,
+          author: options.author,
+          content: await readContentInput(cliContentInput(file, options)),
+        }),
+      ),
     ),
   );
 program
@@ -137,17 +146,27 @@ program
   .requiredOption("--base <number>")
   .requiredOption("-m, --message <summary>")
   .option("-k, --kind <kind>")
+  .option("--entry <name>", "Artifact-relative entry name")
+  .option(
+    "--file <path-or-mapping>",
+    "Include a file; optionally artifact/name=local/path. Repeat for more files.",
+    appendFile,
+    [],
+  )
   .option("--author <author>", "Agent attribution", "Agent")
   .option("--comments <ids>", "Comma-separated comment IDs addressed")
   .action(async (id, file, options) =>
     print(
-      await request(`/artifacts/${segment(id)}/revisions`, "POST", {
-        baseRevision: Number(options.base),
-        summary: options.message,
-        author: options.author,
-        content: await readContent(file, options.kind),
-        commentIds: options.comments?.split(",") ?? [],
-      }),
+      publishResult(
+        await request(`/artifacts/${segment(id)}/revisions`, "POST", {
+          baseRevision: Number(options.base),
+          summary: options.message,
+          author: options.author,
+          content: await readContentInput(cliContentInput(file, options)),
+          commentIds: options.comments?.split(",") ?? [],
+        }),
+        id,
+      ),
     ),
   );
 program
@@ -205,7 +224,7 @@ program
       { name: "atelier", version: "0.1.0" },
       {
         instructions:
-          'Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the space below Atelier\'s thin review header. Do not add workspace headers or sidebars to artifact content. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Prefer Pele for Mermaid diagrams: import { mount } from "pele" in React effects and call the returned handle.destroy() on cleanup; theme with --pele-* CSS variables. Markdown mermaid code fences render with Pele automatically. Existing mermaid imports remain supported for compatibility. React imports use curated browser dependencies. HTML may declare script tags from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com, or code.jquery.com. Each CDN script must use an exact version published at least 14 days ago and an explicit JavaScript file (Tailwind uses /VERSION). Atelier verifies the npm publication date and embeds only that script. Unverifiable dates, unversioned URLs, redirects, and runtime network dependencies are rejected or blocked. External stylesheets are limited to Google Fonts; inline and artifact-local CSS work. The React entry must default-export a component. Write HTML as a page fragment with optional style and script tags; Atelier supplies the doctype, html, head, body, security policy, and runtime. Full HTML documents are accepted for compatibility and normalized into that shell. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.',
+          'Atelier is an agent-authored artifact service. Humans review, comment, and share; agents create and revise all content. Artifacts are standalone pages filling the space below Atelier\'s thin review header. Do not add workspace headers or sidebars to artifact content. Prefer React or HTML for freely combining text, diagrams, charts, images, controls, and animations in one artifact. There are no mandatory templates or content categories. Return the artifact URL to the user. For large artifacts use filePath or filePaths to read existing local files without repeating their contents in a tool call. Paths are absolute and read on the MCP host. Publish results omit source; use get_artifact to read it. Update existing artifacts using their stable ID and current baseRevision. Read comments before editing. Attribute revisions to your agent and include addressed commentIds. Prefer Pele for Mermaid diagrams: import { mount } from "pele" in React effects and call the returned handle.destroy() on cleanup; theme with --pele-* CSS variables. Markdown mermaid code fences render with Pele automatically. Existing mermaid imports remain supported for compatibility. React imports use curated browser dependencies. HTML may declare script tags from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com, or code.jquery.com. Each CDN script must use an exact version published at least 14 days ago and an explicit JavaScript file (Tailwind uses /VERSION). Atelier verifies the npm publication date and embeds only that script. Unverifiable dates, unversioned URLs, redirects, and runtime network dependencies are rejected or blocked. External stylesheets are limited to Google Fonts; inline and artifact-local CSS work. The React entry must default-export a component. Write HTML as a page fragment with optional style and script tags; Atelier supplies the doctype, html, head, body, security policy, and runtime. Full HTML documents are accepted for compatibility and normalized into that shell. Do not include video. Code runs in an isolated browser, not on the host. window.atelier offers getData/setData for persistent JSON data and getState/setState for export state.',
       },
     );
     const tool = (
@@ -260,11 +279,16 @@ program
         title: z.string(),
         description: z.string().optional(),
         author: z.string(),
-        content: contentSchema,
+        ...contentInput,
       },
       async (args) => {
-        const artifact = await request("/artifacts", "POST", args);
-        return { ...artifact, url: `${browserBase}/a/${artifact.id}` };
+        const artifact = await request("/artifacts", "POST", {
+          title: args.title,
+          description: args.description,
+          author: args.author,
+          content: await mcpContent(args),
+        });
+        return publishResult(artifact);
       },
     );
     tool(
@@ -275,13 +299,20 @@ program
         baseRevision: z.number().int().positive(),
         summary: z.string(),
         author: z.string(),
-        content: contentSchema,
+        ...contentInput,
         commentIds: z.array(z.string()).optional(),
       },
-      async ({ id, ...args }) => ({
-        ...(await request(`/artifacts/${segment(id)}/revisions`, "POST", args)),
-        url: `${browserBase}/a/${id}`,
-      }),
+      async ({ id, ...args }) =>
+        publishResult(
+          await request(`/artifacts/${segment(id)}/revisions`, "POST", {
+            baseRevision: args.baseRevision,
+            summary: args.summary,
+            author: args.author,
+            commentIds: args.commentIds,
+            content: await mcpContent(args),
+          }),
+          id,
+        ),
     );
     tool(
       "restore_artifact",
@@ -292,10 +323,11 @@ program
         baseRevision: z.number().int().positive(),
         author: z.string(),
       },
-      async ({ id, ...args }) => ({
-        ...(await request(`/artifacts/${segment(id)}/restore`, "POST", args)),
-        url: `${browserBase}/a/${id}`,
-      }),
+      async ({ id, ...args }) =>
+        publishResult(
+          await request(`/artifacts/${segment(id)}/restore`, "POST", args),
+          id,
+        ),
     );
     tool(
       "duplicate_artifact",
@@ -311,7 +343,7 @@ program
           "POST",
           args,
         );
-        return { ...artifact, url: `${browserBase}/a/${artifact.id}` };
+        return publishResult(artifact);
       },
     );
     tool(

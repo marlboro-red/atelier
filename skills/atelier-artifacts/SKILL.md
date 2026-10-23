@@ -20,7 +20,7 @@ Respect an existing artifact's format unless the requested change needs another.
 
 Use the connected Atelier MCP tools. Tool names may have a client-specific server prefix; inspect their schemas rather than assuming argument shapes. The local Atelier service must be running. The skill does not install or connect it.
 
-For new work, call `create_artifact` with a descriptive title, your agent name as `author`, and the complete content object: `kind`, `entry`, and `files`. Paths are relative to the artifact; `entry` must exist in `files`. All file contents are strings. Include every required local asset.
+For new work, call `create_artifact` with a descriptive title, your agent name as `author`, and exactly one source form: inline `content` (`kind`, `entry`, `files`), an absolute `filePath`, or a `filePaths` map from artifact-relative names to absolute local paths with `entry` and optional `kind`. Prefer path inputs for files already on disk, especially large pages; do not repeat their contents in a tool call. Paths are relative to the artifact; `entry` must exist in `files`. Inline file contents are strings; the path loader encodes image and font binaries as data URLs. Paths are read on the MCP host. Include every required local asset.
 
 For an amendment:
 
