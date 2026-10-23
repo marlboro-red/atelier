@@ -262,6 +262,6 @@ Browser tests use separate ports and `.atelier/test` data. Screenshots and failu
 
 Atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
 
-Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy blocks network requests and embedded frames. Artifacts cannot install arbitrary packages or execute server code.
+Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code.
 
 The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. Atelier is not a security boundary between users of the computer.

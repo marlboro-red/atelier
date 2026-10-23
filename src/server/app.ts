@@ -212,7 +212,27 @@ export function createApp(store: Store, previewPort = 4311) {
       const page = await browser.newPage({
         viewport: { width: 1200, height: 900 },
       });
-      await page.route("**/*", (route) => route.abort());
+      await page.route("**/*", async (route) => {
+        const request = route.request();
+        const origin = new URL(request.url()).origin;
+        const allowed =
+          (request.resourceType() === "stylesheet" &&
+            origin === "https://fonts.googleapis.com") ||
+          (request.resourceType() === "font" &&
+            origin === "https://fonts.gstatic.com");
+        if (!allowed) return route.abort();
+        try {
+          const response = await route.fetch({
+            maxRedirects: 0,
+            timeout: 10000,
+          });
+          if (response.status() >= 300 && response.status() < 400)
+            return route.abort();
+          await route.fulfill({ response });
+        } catch {
+          await route.abort();
+        }
+      });
       await page.setContent(html, { waitUntil: "load", timeout: 15000 });
       await page.evaluate(() => document.fonts.ready);
       await page.waitForTimeout(500);

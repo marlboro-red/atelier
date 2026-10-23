@@ -327,3 +327,71 @@ test("Pele diagrams work in React, Markdown, and offline HTML exports", async ({
   expect(pdf.ok()).toBe(true);
   expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
 });
+
+test("Google Fonts load in previews and HTML exports while other requests stay blocked", async ({
+  page,
+  request,
+}) => {
+  const font = await readFile(
+    "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2",
+  );
+  let fontRequests = 0;
+  const unexpected: string[] = [];
+  await page.route("https://**/*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.origin === "https://fonts.googleapis.com") {
+      return route.fulfill({
+        contentType: "text/css",
+        body: "@font-face{font-family:TestFont;src:url(https://fonts.gstatic.com/test.woff2)} h1{font-family:TestFont}",
+      });
+    }
+    if (url.origin === "https://fonts.gstatic.com") {
+      fontRequests++;
+      return route.fulfill({
+        contentType: "font/woff2",
+        headers: { "access-control-allow-origin": "*" },
+        body: font,
+      });
+    }
+    unexpected.push(url.href);
+    await route.abort();
+  });
+  const a = await create(request, "Google Fonts", {
+    kind: "html",
+    entry: "index.html",
+    files: {
+      "index.html": `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=TestFont"><link rel="stylesheet" href="https://blocked.example/style.css"><h1>Font test</h1><script>fetch('https://fonts.googleapis.com/blocked-fetch').catch(()=>{});fetch('https://blocked.example/data').catch(()=>{});</script>`,
+    },
+  });
+  await page.goto("/a/" + a.id);
+  await expect(
+    page.frameLocator("iframe").getByRole("heading", { name: "Font test" }),
+  ).toBeVisible();
+  const frame = page
+    .frames()
+    .find((frame) => frame.url().includes("/preview/"))!;
+  await frame.evaluate(() => document.fonts.ready);
+  expect(
+    await frame.evaluate(() =>
+      [...document.fonts].some(
+        (font) => font.family === "TestFont" && font.status === "loaded",
+      ),
+    ),
+  ).toBe(true);
+  const exported = await request.post(`/api/artifacts/${a.id}/export`, {
+    data: { format: "html", revision: 1 },
+  });
+  expect(exported.ok()).toBe(true);
+  await page.goto("about:blank");
+  await page.setContent(await exported.text());
+  await page.evaluate(() => document.fonts.ready);
+  expect(
+    await page.evaluate(() =>
+      [...document.fonts].some(
+        (font) => font.family === "TestFont" && font.status === "loaded",
+      ),
+    ),
+  ).toBe(true);
+  expect(fontRequests).toBe(2);
+  expect(unexpected).toEqual([]);
+});
