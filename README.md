@@ -114,12 +114,20 @@ The agent returns a URL such as `http://atelier.localhost:4310/a/<id>`. Open tha
 ## Request a change
 
 1. Highlight text in an artifact and click **Comment** beside the selection.
-2. Enter the change you want and send the comment.
+2. Enter the change you want in the popup and send the comment.
 3. Ask your agent to read the artifact's comments and apply the changes.
 
 For a chart, diagram, or other visual element, click **Comment on an element** in the header, then click the element. The header's **Comments** button shows the number of unresolved threads. Click highlighted text or a numbered marker to open its thread.
 
-Comments wait until an agent reads them. atelier does not start or wake an agent. See [automatic comment delivery](docs/agent-feedback.md) for the integration options under consideration.
+To handle feedback automatically, start a connection in a second terminal:
+
+```sh
+atelier watch ARTIFACT_ID --agent codex --cwd .
+```
+
+Use `--agent copilot` for GitHub Copilot CLI or `--agent claude` for Claude Code. Claude opens an interactive session and asks you to enable the local development channel. In the viewer, **Comments → Connect an agent** copies the command for your artifact.
+
+Keep the terminal open. Without a connection, comments wait for an agent to read them manually. See [automatic comment delivery](docs/agent-feedback.md) for session resume, permissions, and interrupted deliveries.
 
 The agent saves a new revision under the same artifact ID. The thread links to the revision that addressed it. Click **History** in the header to inspect earlier revisions or compare source. Resolve the comment after you check the change.
 

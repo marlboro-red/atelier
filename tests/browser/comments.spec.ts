@@ -31,6 +31,9 @@ test("text selection, annotations, replies, resolution and exports form one revi
   });
   await expect(page.locator(".review-panel")).toHaveCount(0);
   await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "New comment" })).toBeVisible();
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await expect(page.locator("iframe")).toHaveCSS("width", "1440px");
   await expect(page.getByLabel("Comment", { exact: true })).toBeFocused();
   await expect(page.locator(".selected-quote")).toHaveText(
     "The tide rises twice each day.",
@@ -43,7 +46,9 @@ test("text selection, annotations, replies, resolution and exports form one revi
   await expect(
     frame.getByRole("button", { name: "Open comment 1" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Close panel" }).click();
+  await expect(page.getByRole("dialog", { name: "New comment" })).toHaveCount(
+    0,
+  );
   await frame
     .locator("#detail")
     .evaluate(() => getSelection()?.removeAllRanges());
@@ -72,7 +77,8 @@ test("text selection, annotations, replies, resolution and exports form one revi
     frame.getByRole("button", { name: "Try control" }),
   ).toBeVisible();
   await expect(page.locator(".selected-quote")).toContainText("Try control");
-  await page.getByRole("button", { name: "Close panel" }).click();
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await page.getByRole("button", { name: "Close comment" }).click();
   await frame.getByRole("button", { name: "Try control" }).click();
   await expect(frame.getByRole("button", { name: "Changed" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -134,7 +140,9 @@ test("repeated text anchors retain the selected occurrence after reload", async 
   await page.getByRole("button", { name: "Comment", exact: true }).click();
   await page.getByLabel("Comment", { exact: true }).fill("The second tide.");
   await page.getByRole("button", { name: "Send comment", exact: true }).click();
-  await expect(page.locator(".comment")).toContainText("The second tide.");
+  await expect(page.getByRole("dialog", { name: "New comment" })).toHaveCount(
+    0,
+  );
   const comments = await (
     await request.get(`/api/artifacts/${artifact.id}/comments`)
   ).json();
@@ -146,5 +154,66 @@ test("repeated text anchors retain the selected occurrence after reload", async 
   await frame.getByRole("button", { name: "Open comment 1" }).click();
   await expect(page.locator('.comment[data-active="true"]')).toContainText(
     "The second tide.",
+  );
+});
+
+test("mobile comments use a compact popup and show connection state in the thread list", async ({
+  page,
+  request,
+}) => {
+  const response = await request.post("/api/artifacts", {
+    data: {
+      title: "Mobile feedback",
+      content: {
+        kind: "html",
+        entry: "index.html",
+        files: {
+          "index.html": '<h1 style="margin:80px 24px">A small page</h1>',
+        },
+      },
+    },
+  });
+  const a = await response.json();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/a/" + a.id);
+  await page.getByRole("button", { name: "Comment on an element" }).click();
+  await expect(page.frameLocator("iframe").locator("html")).toHaveCSS(
+    "cursor",
+    "crosshair",
+  );
+  await page.frameLocator("iframe").locator("h1").click();
+  const popup = page.getByRole("dialog", { name: "New comment" });
+  await expect(popup).toBeVisible();
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  const box = await popup.boundingBox();
+  expect(box!.width).toBeLessThan(390);
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  await page.getByLabel("Comment", { exact: true }).fill("Make this clearer.");
+  await page.getByRole("button", { name: "Send comment" }).click();
+  await expect(popup).toHaveCount(0);
+  expect(
+    (await (await request.get(`/api/artifacts/${a.id}/feedback`)).json())
+      .queued,
+  ).toBe(1);
+  await page.getByRole("button", { name: "Comments (1)" }).click();
+  await page.getByText("Connect an agent", { exact: true }).click();
+  await expect(page.locator(".agent-connect code")).toContainText(
+    `atelier watch ${a.id} --agent codex --cwd .`,
+  );
+  const connected = await (
+    await request.post(`/api/artifacts/${a.id}/feedback/connect`, {
+      data: { provider: "copilot", session: "test" },
+    })
+  ).json();
+  await request.post(`/api/artifacts/${a.id}/feedback/heartbeat`, {
+    data: { token: connected.token, state: "needs_permission" },
+  });
+  await expect(page.locator(".feedback-status")).toContainText(
+    "copilot needs permission in the terminal",
+  );
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(page.locator(".feedback-status")).toContainText(
+    "No agent connected",
   );
 });

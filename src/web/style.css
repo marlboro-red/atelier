@@ -1242,3 +1242,80 @@ button svg {
     width: 100%;
   }
 }
+
+.comment-popover {
+  position: fixed;
+  z-index: 25;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 56px);
+  overflow: auto;
+  background: #fcfcf8;
+  border: 1px solid #dce1d3;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px #23311c25;
+  padding: 12px;
+}
+.comment-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.comment-popover .composer {
+  margin-top: 10px;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.comment-popover .composer textarea {
+  min-height: 90px;
+  max-height: 160px;
+}
+.feedback-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 11px;
+  color: #65715c;
+}
+.feedback-status small {
+  display: block;
+  width: 100%;
+  line-height: 1.5;
+}
+.feedback-status button {
+  font-size: 10px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.agent-connect {
+  font-size: 11px;
+  color: #65715c;
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.agent-connect summary {
+  cursor: pointer;
+}
+.agent-connect code {
+  display: block;
+  overflow-wrap: anywhere;
+  background: #eef0e8;
+  padding: 8px;
+  margin: 8px 0;
+}
+.agent-connect select {
+  font: inherit;
+  padding: 4px;
+  background: white;
+  border: 1px solid #dce1d3;
+  border-radius: 4px;
+}
+.agent-connect button {
+  font-size: 11px;
+  padding: 0;
+}

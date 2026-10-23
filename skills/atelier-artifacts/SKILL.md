@@ -30,7 +30,7 @@ For an amendment:
 4. Call `revise_artifact` with the current `baseRevision`, a concise change summary, the complete updated content object, and the `commentIds` actually addressed. Files are replaced as a set, not patched or merged by the service.
 5. If there is a revision conflict, read the latest source and reconcile it before retrying. Do not overwrite concurrent changes or create a new artifact to bypass the conflict.
 
-Use `reply_to_comment` for a useful reply or `in_progress` status. Linking comments to a revision marks them ready for review; leave resolution to the user unless asked to resolve them. Comments do not wake an agent automatically. Use `duplicate_artifact` only when the user wants a separate copy, and `restore_artifact` for an intentional rollback.
+Use `reply_to_comment` for a useful reply or `in_progress` status. Linking comments to a revision marks them ready for review; leave resolution to the user unless asked to resolve them. Without an explicit `atelier watch` connection, comments wait for an agent to read them. Watchers deliver user feedback through Claude Code Channels, the Codex app server, or Copilot CLI ACP. On receiving feedback, read the current artifact and comments before revising; that read also acknowledges Claude channel delivery. Use `duplicate_artifact` only when the user wants a separate copy, and `restore_artifact` for an intentional rollback.
 
 ## Work within the runtime
 

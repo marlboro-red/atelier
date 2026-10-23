@@ -1,34 +1,66 @@
-# Automatic comment delivery
+# Handle comments automatically
 
-atelier saves comments and updates open viewers through `/api/events`. Agents currently read comments with `list_comments`. No background process starts an agent or injects a message into its session.
+Connect one artifact to an agent to have new comments picked up automatically. The connection runs locally and uses the agent's existing login. Keep atelier and the agent terminal open.
 
-Automatic delivery needs two parts: a durable record that feedback arrived, and an agent client that accepts a new turn. MCP alone does not supply both.
+## Start a connection
 
-## Available mechanisms
+Install and sign in to the CLI you want to use. Then run one of these commands from the directory the agent should work in:
 
-| Mechanism | What it provides | Limit for atelier |
-| --- | --- | --- |
-| MCP resource subscriptions | Tells a subscribed client that a resource changed | The host decides whether to read the resource or run the agent. A notification is not an instruction to start a turn. |
-| Claude Code Channels | Pushes an event into an open Claude Code session | Requires session opt-in. Custom channels remain a research-preview integration. This does not establish support in Claude Desktop. |
-| Codex app server | Starts a turn in a specified thread through `turn/start` | Requires an adapter that owns or connects to the app-server session. Ordinary MCP configuration does not establish that connection. |
-| Agent polling or a waiting tool call | Lets a running agent check for comments | Does not wake an idle or closed session. Repeated checks also consume agent time. |
+```sh
+atelier watch ARTIFACT_ID --agent codex --cwd .
+atelier watch ARTIFACT_ID --agent copilot --cwd .
+atelier watch ARTIFACT_ID --agent claude --cwd .
+```
 
-MCP sampling requests a model response from a supporting client. It does not guarantee access to the user's existing conversation, tools, or an autonomous editing turn. It is not a portable substitute for comment delivery.
+Replace `ARTIFACT_ID` with the ID at the end of the artifact's URL. In the viewer, **Comments → Connect an agent** can copy the command with the ID filled in.
 
-These findings come from the [MCP resource specification](https://modelcontextprotocol.io/specification/2025-11-25/server/resources), [MCP sampling specification](https://modelcontextprotocol.io/specification/2025-11-25/client/sampling), [Claude Code Channels reference](https://code.claude.com/docs/en/channels-reference), and [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server), checked on 24 October 2026. Actual client behavior still needs integration testing.
+Codex and Copilot start a managed session and print its ID. Claude opens its interactive CLI with atelier configured as a channel. None of these commands changes your global MCP configuration.
 
-## Proposed implementation
+### Claude Code
 
-Keep the comment queue independent of the agent. Add adapters for clients that can accept events or new turns. The user chooses one agent session for an artifact and enables automatic handling explicitly.
+Claude's custom channels require its development-channel opt-in. The command passes `--dangerously-load-development-channels server:atelier`; Claude displays its own confirmation. Accept only the local atelier channel you intended to start. Organization policy may block channels.
 
-A new comment, user reply, or reopened thread should create a durable event with a unique ID. The current `/api/events` stream contains artifact IDs and has no replay history, so it cannot be the only delivery record. An adapter should resume from its last acknowledged event after reconnecting.
+Use the interactive terminal. Claude ignores the development-channel flag in `-p` mode and through its Agent SDK. atelier waits for Claude to call `list_comments` before recording delivery, because writing a channel notification does not prove that Claude received it. A missing receipt times out after 15 minutes and needs review before retrying.
 
-Send the artifact ID, comment ID, and event ID to the adapter. The agent then reads the thread through MCP. Agent replies and published revisions must not trigger another agent turn. Delivery acknowledgement and completed work need separate states: writing a notification does not prove that an agent read or addressed it.
+See the [Claude Code Channels reference](https://code.claude.com/docs/en/channels-reference).
 
-Only one adapter should claim an event. Group comments that arrive while the agent is working, and deliver them after its current turn. Keep `baseRevision` conflict checks when publishing. Show whether automatic handling is connected, disconnected, or waiting for permission; never describe an undelivered comment as being processed.
+### Codex and GitHub Copilot CLI
 
-The adapter must retain the client's permission and sandbox settings. Comment text is task data, not permission to execute unrelated commands. Choosing an agent must not enable arbitrary shell commands or silently resume another conversation.
+Codex uses its app-server protocol. Copilot uses ACP over stdio. These are managed sessions started by atelier, not attachments to an arbitrary open terminal conversation.
 
-Start with a Codex app-server adapter for an explicitly selected session. A Claude Code channel can share the same durable event queue later. Both should remain optional; ordinary MCP clients must continue to work through `list_comments`.
+To resume an explicit saved session, add its ID:
 
-This is a design proposal. No automatic delivery adapter is enabled or shipped yet.
+```sh
+atelier watch ARTIFACT_ID --agent codex --cwd . --session SESSION_ID
+atelier watch ARTIFACT_ID --agent copilot --cwd . --session SESSION_ID
+```
+
+Stop any other client using that session before resuming it. Use the same working directory. Claude also accepts `--session`, which passes the ID to `claude --resume`.
+
+See the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server) and [Copilot CLI ACP reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server). ACP and custom Claude channels are preview interfaces and may change between CLI releases.
+
+## Leave feedback
+
+Highlight text and click **Comment**, or use **Comment on an element** in the header. Write your request in the small popup and send it. The document stays at full width.
+
+New viewer comments, replies, and reopened threads enter the durable queue. Feedback saved while disconnected waits for the next connection. Agent replies and revisions do not trigger another turn. Comments created through MCP do not enqueue work; API callers must explicitly set `notifyAgent: true` when submitting user feedback.
+
+The agent reads the source and thread, replies, and publishes revisions under the same artifact ID. Check the result and resolve the thread yourself. A completed delivery means the agent received the work, not that the requested change succeeded.
+
+## Check or stop delivery
+
+Open **Comments** to see the connection, queued feedback, and permission requests. For Codex and Copilot, approve unrelated tool actions in the terminal when prompted. Without an interactive terminal, those requests are denied.
+
+Press **Ctrl+C** to stop a managed watcher, or click **Disconnect** to stop further delivery. Watchers check the connection every five seconds. A Claude turn already running may continue after delivery is disconnected; stop that turn in Claude if needed.
+
+If delivery is interrupted, check the comment and latest revision before using **Retry uncertain deliveries**. The agent may have already applied the change. atelier does not automatically replay an ambiguous attempt. Queued feedback that has not been dispatched is preserved across restarts.
+
+## Permission boundaries
+
+Starting a watcher authorizes the scoped atelier tools for that artifact. The MCP connection rejects other artifact IDs, creation, and duplication. File inputs must resolve inside the chosen working directory, including through symlinks. This scope does not restrict every tool offered by the agent itself.
+
+Managed Codex sessions use a read-only filesystem sandbox and request approval for untrusted commands. Copilot retains its CLI sandbox settings and receives approval for the scoped atelier MCP server only. Other permission requests are handled individually. atelier never passes an allow-all-tools or sandbox-bypass flag.
+
+Claude retains its own terminal permissions. The channel does not relay approvals through artifact comments. Comment text remains task data, not permission to run unrelated commands or access unrelated files.
+
+Only one active delivery connection can own an artifact's queue. Events are recorded before dispatch, grouped in batches of up to 50, and acknowledged by event ID. New feedback arriving during a managed turn waits for the next turn. Revision conflict checks still apply.

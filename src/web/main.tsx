@@ -52,6 +52,46 @@ function App() {
     [revision, setRevision] = useState<Revision | null>(null),
     [history, setHistory] = useState<Revision[]>([]),
     [comments, setComments] = useState<Comment[]>([]);
+  const [composerPosition, setComposerPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    provider: string | null;
+    connected: boolean;
+    state: string;
+    queued: number;
+    uncertain: number;
+  } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [connectionProvider, setConnectionProvider] = useState("codex");
+  useEffect(() => {
+    if (!locationState.id) {
+      setFeedback(null);
+      return;
+    }
+    let cancelled = false;
+    const update = () =>
+      api(`/artifacts/${locationState.id}/feedback`)
+        .then((value) => {
+          if (!cancelled) setFeedback(value);
+        })
+        .catch(() => {
+          if (!cancelled) setFeedback(null);
+        });
+    void update();
+    const timer = setInterval(update, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [locationState.id]);
+  function popupPosition(x: number, y: number) {
+    return {
+      x: Math.max(8, Math.min(x, innerWidth - 348)),
+      y: Math.max(48, Math.min(y, innerHeight - 285)),
+    };
+  }
   const [search, setSearch] = useState(""),
     [reviewOpen, setReviewOpen] = useState(false),
     [activeComment, setActiveComment] = useState<string | null>(null),
@@ -189,10 +229,12 @@ function App() {
     setPanel(null);
     setSelecting(false);
     setSelectionCandidate(null);
+    setComposerPosition(null);
   }
   function openPanel(next: Panel) {
     setReviewOpen(false);
     setPanel(next);
+    setComposerPosition(null);
     setSelecting(false);
     if (next !== "source") setCompare(null);
   }
@@ -277,6 +319,7 @@ function App() {
       setRuntimeErrors([]);
       setSelecting(false);
       setSelectionCandidate(null);
+      setComposerPosition(null);
       setAnchor(null);
     }
   }, [revision?.artifactId, revision?.number]);
@@ -288,6 +331,7 @@ function App() {
     setPanel(null);
     setActiveComment(null);
     setSelectionCandidate(null);
+    setComposerPosition(null);
     setBody("");
     setAnchor(null);
   }, [locationState.id]);
@@ -304,7 +348,13 @@ function App() {
         if (!selecting || !selection.success) return;
         setAnchor(selection.data);
         setSelecting(false);
-        setPanel("comments");
+        setPanel(null);
+        setComposerPosition(
+          popupPosition(
+            Number.isFinite(msg.x) ? msg.x : 24,
+            Number.isFinite(msg.y) ? msg.y + 44 : 80,
+          ),
+        );
         setReviewOpen(false);
         setSelectionCandidate(null);
         setActiveComment(null);
@@ -403,11 +453,11 @@ function App() {
       document
         .getElementById("comment-" + activeComment)
         ?.scrollIntoView({ block: "nearest" });
-    if (panel === "comments" && anchor)
+    if ((panel === "comments" || composerPosition) && anchor)
       document
         .querySelector<HTMLTextAreaElement>(".composer textarea")
         ?.focus();
-  }, [panel, activeComment, anchor]);
+  }, [panel, activeComment, anchor, composerPosition]);
   useEffect(() => {
     iframe.current?.contentWindow?.postMessage(
       { atelier: true, type: "selection-mode", enabled: selecting },
@@ -415,16 +465,32 @@ function App() {
     );
   }, [selecting]);
   async function addComment() {
-    if (!artifact || !revision) return;
-    const created = await api<Comment>(
-      `/artifacts/${artifact.id}/comments`,
-      post({ revision: revision.number, body, anchor, author: "You" }),
-    );
-    setBody("");
-    setAnchor(null);
-    setActiveComment(created.id);
-    await refresh();
-    notify("Feedback queued for your agent");
+    if (!artifact || !revision || sending) return;
+    setSending(true);
+    try {
+      const created = await api<Comment>(
+        `/artifacts/${artifact.id}/comments`,
+        post({
+          revision: revision.number,
+          body,
+          anchor,
+          author: "You",
+          notifyAgent: true,
+        }),
+      );
+      setBody("");
+      setAnchor(null);
+      setComposerPosition(null);
+      setActiveComment(created.id);
+      await refresh();
+      notify(
+        feedback?.connected
+          ? "Comment queued for your agent"
+          : "Comment saved. Connect an agent to handle it automatically.",
+      );
+    } finally {
+      setSending(false);
+    }
   }
   async function exportArtifact(format: "html" | "pdf") {
     if (!artifact || !revision) return;
@@ -461,6 +527,42 @@ function App() {
       .includes(search.toLowerCase()),
   );
   const showingArtifact = !!locationState.id;
+  const composer = (
+    <div className="composer">
+      {anchor && (
+        <div className="selected-quote">
+          <span>{anchor.quote || `<${anchor.tag}>`}</span>
+          <button aria-label="Clear selection" onClick={() => setAnchor(null)}>
+            <X size={13} />
+          </button>
+        </div>
+      )}
+      <textarea
+        aria-label="Comment"
+        placeholder="What would you like to change?"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+      />
+      <div>
+        <span>
+          {feedback?.connected ? `For ${feedback.provider}` : "For your agent"}
+        </span>
+        <button
+          className="send-button"
+          aria-label="Send comment"
+          disabled={!body.trim() || sending}
+          onClick={() => run(addComment)}
+        >
+          <ArrowUpRight size={17} />
+        </button>
+      </div>
+      <small>
+        {feedback?.connected
+          ? "Delivered automatically while connected."
+          : "Saved until an agent connects or reads it."}
+      </small>
+    </div>
+  );
   return (
     <div
       className={
@@ -610,6 +712,7 @@ function App() {
                                     "Please fix these preview errors:\n" +
                                     runtimeErrors.join("\n"),
                                   author: "You",
+                                  notifyAgent: true,
                                 }),
                               );
                               openPanel("comments");
@@ -636,11 +739,36 @@ function App() {
                     setAnchor(selectionCandidate.anchor);
                     setSelectionCandidate(null);
                     setActiveComment(null);
-                    openPanel("comments");
+                    setPanel(null);
+                    setComposerPosition(
+                      popupPosition(selectionCandidate.x, selectionCandidate.y),
+                    );
                   }}
                 >
                   <MessageSquare size={14} /> Comment
                 </button>
+              )}
+              {composerPosition && (
+                <section
+                  role="dialog"
+                  aria-label="New comment"
+                  className="comment-popover"
+                  style={{
+                    left: `clamp(8px, ${composerPosition.x}px, max(8px, calc(100vw - 348px)))`,
+                    top: `clamp(48px, ${composerPosition.y}px, max(48px, calc(100dvh - 285px)))`,
+                  }}
+                >
+                  <header>
+                    <strong>Comment</strong>
+                    <button
+                      aria-label="Close comment"
+                      onClick={() => setComposerPosition(null)}
+                    >
+                      <X size={15} />
+                    </button>
+                  </header>
+                  {composer}
+                </section>
               )}
               {panel && (
                 <aside
@@ -680,6 +808,102 @@ function App() {
                   </header>
                   {panel === "comments" ? (
                     <>
+                      <div className="feedback-status" role="status">
+                        <span>
+                          {feedback?.connected
+                            ? feedback.state === "needs_permission"
+                              ? `${feedback.provider} needs permission in the terminal`
+                              : feedback.state === "awaiting_agent"
+                                ? "Waiting for Claude to read the comments"
+                                : feedback.state === "working"
+                                  ? `${feedback.provider} is handling feedback`
+                                  : `${feedback.provider} connected`
+                            : "No agent connected"}
+                        </span>
+                        {feedback?.connected && (
+                          <button
+                            onClick={() =>
+                              run(async () => {
+                                await api(
+                                  `/artifacts/${artifact.id}/feedback/disconnect`,
+                                  post({}),
+                                );
+                                setFeedback(null);
+                              })
+                            }
+                          >
+                            Disconnect
+                          </button>
+                        )}
+                        {!!feedback?.queued && (
+                          <small>
+                            {feedback.queued} feedback event
+                            {feedback.queued === 1 ? "" : "s"} queued
+                          </small>
+                        )}
+                        {!!feedback?.uncertain && (
+                          <div>
+                            <small>
+                              Delivery was interrupted. Check the thread before
+                              retrying.
+                            </small>
+                            <button
+                              onClick={() =>
+                                run(async () => {
+                                  await api(
+                                    `/artifacts/${artifact.id}/feedback/retry`,
+                                    post({}),
+                                  );
+                                  setFeedback(
+                                    await api(
+                                      `/artifacts/${artifact.id}/feedback`,
+                                    ),
+                                  );
+                                })
+                              }
+                            >
+                              Retry uncertain deliveries
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {!feedback?.connected && (
+                        <details className="agent-connect">
+                          <summary>Connect an agent</summary>
+                          <p>
+                            Run this command in the agent's working directory.
+                            Keep the terminal open.
+                          </p>
+                          <label>
+                            Agent{" "}
+                            <select
+                              value={connectionProvider}
+                              onChange={(event) =>
+                                setConnectionProvider(event.target.value)
+                              }
+                            >
+                              <option value="codex">Codex</option>
+                              <option value="claude">Claude Code</option>
+                              <option value="copilot">
+                                GitHub Copilot CLI
+                              </option>
+                            </select>
+                          </label>
+                          <code>{`atelier watch ${artifact.id} --agent ${connectionProvider} --cwd .`}</code>
+                          <button
+                            onClick={() =>
+                              run(async () => {
+                                await navigator.clipboard.writeText(
+                                  `atelier watch ${artifact.id} --agent ${connectionProvider} --cwd .`,
+                                );
+                                notify("Connection command copied");
+                              })
+                            }
+                          >
+                            <Copy size={12} /> Copy command
+                          </button>
+                        </details>
+                      )}
                       <div className="comment-intro">
                         <p>Highlight text on the page to comment.</p>
                         <button onClick={startSelection}>
@@ -785,6 +1009,7 @@ function App() {
                                       {
                                         method: "PATCH",
                                         body: JSON.stringify({
+                                          notifyAgent: true,
                                           status:
                                             c.status === "resolved"
                                               ? "open"
@@ -819,6 +1044,7 @@ function App() {
                                       body: JSON.stringify({
                                         reply: input.value,
                                         author: "You",
+                                        notifyAgent: true,
                                       }),
                                     },
                                   );
@@ -840,37 +1066,7 @@ function App() {
                           </div>
                         ))}
                       </div>
-                      <div className="composer">
-                        {anchor && (
-                          <div className="selected-quote">
-                            <span>{anchor.quote || `<${anchor.tag}>`}</span>
-                            <button
-                              aria-label="Clear selection"
-                              onClick={() => setAnchor(null)}
-                            >
-                              <X size={13} />
-                            </button>
-                          </div>
-                        )}
-                        <textarea
-                          aria-label="Comment"
-                          placeholder="What would you like to change?"
-                          value={body}
-                          onChange={(e) => setBody(e.target.value)}
-                        />
-                        <div>
-                          <span>For your connected agent</span>
-                          <button
-                            className="send-button"
-                            aria-label="Send comment"
-                            disabled={!body.trim()}
-                            onClick={() => run(addComment)}
-                          >
-                            <ArrowUpRight size={17} />
-                          </button>
-                        </div>
-                        <small>Queued until an agent reads it.</small>
-                      </div>{" "}
+                      {!composerPosition && composer}
                     </>
                   ) : panel === "history" ? (
                     <>

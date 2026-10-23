@@ -138,7 +138,7 @@ Pele has its own layout and visual style. Existing `mermaid` imports still use M
 
 ## Comments
 
-Highlighting text offers a nearby Comment button. The header also provides element selection and a Comments button with an unresolved count. Unresolved comments appear as highlights and numbered markers; clicking either opens the thread. Annotations do not appear in HTML or PDF exports.
+Highlighting text offers a nearby Comment button that opens a compact composer without opening the sidebar or resizing the artifact. The header also provides element selection and a Comments button with an unresolved count. Unresolved comments appear as highlights and numbered markers; clicking either opens the thread. Annotations do not appear in HTML or PDF exports.
 
 A comment belongs to an artifact and a revision. Its optional anchor contains the selected quote, surrounding text, DOM selector, and element tag.
 
@@ -153,7 +153,7 @@ Comment status has four values:
 | `addressed` | Ready for review | An agent has submitted a revision linked to the comment, or set this status |
 | `resolved` | Resolved | The thread is closed |
 
-Agents read comments through MCP, the CLI, or the API. atelier does not launch agents. A revision's `commentIds` marks linked, unresolved comments as `addressed`.
+Agents read comments through MCP, the CLI, or the API. An explicit `atelier watch` command enables automatic delivery through Claude Code Channels, the Codex app server, or Copilot CLI ACP. See [automatic comment delivery](agent-feedback.md). A revision's `commentIds` marks linked, unresolved comments as `addressed`.
 
 ## Artifact state
 
@@ -337,8 +337,8 @@ Write requests accept these fields:
 | Delete artifact | `baseRevision` | None |
 | Restore revision | `revision`, `baseRevision` | `author` |
 | Duplicate revision | `revision` | `author` |
-| Add comment | `revision`, `body` | `author`, `anchor` |
-| Update comment | None | `reply`, `author`, `status` |
+| Add comment | `revision`, `body` | `author`, `anchor`, `notifyAgent` |
+| Update comment | None | `reply`, `author`, `status`, `notifyAgent` |
 | Write app data | `data` | None |
 | Export | `revision`, `format` | `snapshot` |
 | Preview check | None | `revision`, `width`, `height`, `screenshot` |
@@ -369,3 +369,21 @@ Generated code runs in a sandboxed inline iframe without same-origin privileges.
 The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. atelier is not a security boundary between users of the computer.
 
 The [security model](security.md) describes the trusted components, resource limits, and remaining risks.
+
+### Feedback delivery endpoints
+
+All paths below are relative to `/api/artifacts/:id/feedback`. `notifyAgent` defaults to `false` on comment creation and update. The viewer sets it to `true` for user feedback. Feedback events and connection metadata persist in SQLite and are deleted with their artifact.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/` | Connection state and queued, delivered, and uncertain counts |
+| POST | `/connect` | Claim the artifact with `provider` and `session`; returns a connection token |
+| POST | `/heartbeat` | Renew the 30-second lease with `token` and `state` |
+| POST | `/claim` | Claim up to 50 pending events with `token` |
+| POST | `/finish` | Record delivery for `ids` with `token`; optional `error` makes them uncertain |
+| POST | `/disconnect` | Disable delivery; a watcher supplies its token |
+| POST | `/retry` | Explicitly requeue uncertain events |
+
+A connection token fences queue operations, not every native agent tool. A disconnected or expired token cannot acknowledge a later connection's events. Delivery acknowledgements do not mark comments resolved.
+
+`atelier watch ID --agent claude|codex|copilot --cwd PATH [--session ID]` runs in the foreground. `atelier mcp --artifact ID` scopes the MCP tools to one artifact and file inputs to its working directory. `--claude-channel` additionally advertises Claude's channel capability and waits for comment reads as delivery receipts. Ordinary `atelier mcp` behavior is unchanged.

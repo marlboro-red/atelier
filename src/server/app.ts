@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { Feedback } from "./feedback.js";
 import { z } from "zod";
 import { EventEmitter } from "node:events";
 import type { ServerResponse } from "node:http";
@@ -15,6 +16,7 @@ import { workspacePolicy } from "../shared/security.js";
 export function createApp(store: Store, previewPort = 4311) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
   const renderer = new RenderPool();
+  const feedback = new Feedback(store);
   const events = new EventEmitter();
   events.setMaxListeners(100);
   const streams = new Set<ServerResponse>();
@@ -171,6 +173,7 @@ export function createApp(store: Store, previewPort = 4311) {
         revision: z.number().int().positive(),
         baseRevision: z.number().int().positive(),
         author: z.string().max(100).default("Agent"),
+        notifyAgent: z.boolean().default(false),
       })
       .parse(req.body);
     const r = store.update(id, {
@@ -189,6 +192,7 @@ export function createApp(store: Store, previewPort = 4311) {
       .object({
         revision: z.number().int().positive(),
         author: z.string().max(100).default("Agent"),
+        notifyAgent: z.boolean().default(false),
       })
       .parse(req.body);
     const a = store.get(id);
@@ -228,7 +232,15 @@ export function createApp(store: Store, previewPort = 4311) {
   );
   app.post("/api/artifacts/:id/comments", async (req, reply) => {
     const id = params(req).id;
-    const c = store.addComment(id, commentSchema.parse(req.body));
+    const input = commentSchema
+      .extend({ notifyAgent: z.boolean().default(false) })
+      .parse(req.body);
+    const { notifyAgent, ...comment } = input;
+    const c = store.transaction(() => {
+      const created = store.addComment(id, comment);
+      if (notifyAgent) feedback.enqueue(id, created.id, "comment");
+      return created;
+    });
     changed(id);
     return reply.code(201).send(c);
   });
@@ -241,17 +253,24 @@ export function createApp(store: Store, previewPort = 4311) {
           .optional(),
         reply: z.string().trim().min(1).max(10000).optional(),
         author: z.string().max(100).default("Agent"),
+        notifyAgent: z.boolean().default(false),
       })
       .parse(req.body);
     const c = store.comment(id, cid);
+    const reopened = input.status === "open" && c.status !== "open";
     if (input.status) c.status = input.status;
+    if (input.notifyAgent && input.reply) c.status = "open";
     if (input.reply)
       c.replies.push({
         body: input.reply,
         author: input.author,
         createdAt: new Date().toISOString(),
       });
-    store.saveComment(c);
+    store.transaction(() => {
+      store.saveComment(c);
+      if (input.notifyAgent && (input.reply || reopened))
+        feedback.enqueue(id, c.id, input.reply ? "reply" : "reopened");
+    });
     changed(id);
     return c;
   });
@@ -266,6 +285,72 @@ export function createApp(store: Store, previewPort = 4311) {
       throw new HttpError(413, "App data limit is 2 MB");
     store.setData(params(req).id, body.data);
     return { ok: true };
+  });
+  app.get("/api/artifacts/:id/feedback", async (req) =>
+    feedback.status(params(req).id),
+  );
+  app.post("/api/artifacts/:id/feedback/connect", async (req) => {
+    const input = z
+      .object({
+        provider: z.enum(["codex", "copilot", "claude"]),
+        session: z.string().min(1).max(300),
+      })
+      .parse(req.body);
+    const result = feedback.connect(
+      params(req).id,
+      input.provider,
+      input.session,
+    );
+    changed(params(req).id);
+    return result;
+  });
+  app.post("/api/artifacts/:id/feedback/heartbeat", async (req) => {
+    const input = z
+      .object({
+        token: z.string().uuid(),
+        state: z.enum([
+          "connected",
+          "working",
+          "needs_permission",
+          "awaiting_agent",
+        ]),
+      })
+      .parse(req.body);
+    return feedback.heartbeat(params(req).id, input.token, input.state);
+  });
+  app.post("/api/artifacts/:id/feedback/claim", async (req) => {
+    const input = z.object({ token: z.string().uuid() }).parse(req.body);
+    return feedback.claim(params(req).id, input.token);
+  });
+  app.post("/api/artifacts/:id/feedback/finish", async (req) => {
+    const input = z
+      .object({
+        token: z.string().uuid(),
+        ids: z.array(z.number().int().positive()).min(1).max(50),
+        error: z.string().max(1000).optional(),
+      })
+      .parse(req.body);
+    const result = feedback.finish(
+      params(req).id,
+      input.token,
+      input.ids,
+      input.error,
+    );
+    changed(params(req).id);
+    return result;
+  });
+  app.post("/api/artifacts/:id/feedback/disconnect", async (req) => {
+    const input = z
+      .object({ token: z.string().uuid().optional() })
+      .parse(req.body);
+    const result = feedback.disconnect(params(req).id, input.token);
+    changed(params(req).id);
+    return result;
+  });
+  app.post("/api/artifacts/:id/feedback/retry", async (req) => {
+    const result = feedback.retry(params(req).id);
+    changed(params(req).id);
+    return result;
   });
   app.get("/api/events", async (req, reply) => {
     reply.hijack();

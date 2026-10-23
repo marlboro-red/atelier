@@ -52,6 +52,7 @@ test("agent-created artifacts fill the page; review and exports preserve interac
     .getByLabel("Comment", { exact: true })
     .fill("Change the heading to A clearer picture.");
   await page.getByRole("button", { name: "Send comment", exact: true }).click();
+  await page.getByRole("button", { name: /^Comments/ }).click();
   await expect(page.locator(".comment")).toContainText("Queued for agent");
   const comments = await (
     await request.get(`/api/artifacts/${a.id}/comments`)
