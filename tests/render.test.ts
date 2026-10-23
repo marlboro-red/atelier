@@ -24,6 +24,9 @@ test("sanitizes markdown and renders mathematics", async () => {
 test("rejects dependency and filesystem escapes", async () => {
   for (const dependency of [
     "node:fs",
+    "recharts/../../package.json",
+    "lucide-react/../../package.json",
+    "recharts/../react/package.json",
     "../../package.json",
     "https://evil.example/a.js",
   ])

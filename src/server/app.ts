@@ -10,6 +10,7 @@ import {
 } from "../shared/schema.js";
 import { render } from "./render.js";
 import { checkPreview, type PreviewCheck } from "./check.js";
+import { renderPdf } from "./pdf.js";
 import { workspacePolicy } from "../shared/security.js";
 export function createApp(store: Store, previewPort = 4311) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
@@ -279,53 +280,8 @@ export function createApp(store: Store, previewPort = 4311) {
       `attachment; filename="${name}.${input.format}"`,
     );
     if (input.format === "html") return reply.type("text/html").send(html);
-    const { chromium } = await import("playwright");
-    let browser;
-    try {
-      browser = await chromium.launch({ headless: true });
-    } catch {
-      throw new HttpError(
-        503,
-        "PDF browser is missing. Run: atelier install-browser",
-      );
-    }
-    try {
-      const page = await browser.newPage({
-        viewport: { width: 1200, height: 900 },
-      });
-      await page.route("**/*", async (route) => {
-        const request = route.request();
-        const origin = new URL(request.url()).origin;
-        const allowed =
-          (request.resourceType() === "stylesheet" &&
-            origin === "https://fonts.googleapis.com") ||
-          (request.resourceType() === "font" &&
-            origin === "https://fonts.gstatic.com");
-        if (!allowed) return route.abort();
-        try {
-          const response = await route.fetch({
-            maxRedirects: 0,
-            timeout: 10000,
-          });
-          if (response.status() >= 300 && response.status() < 400)
-            return route.abort();
-          await route.fulfill({ response });
-        } catch {
-          await route.abort();
-        }
-      });
-      await page.setContent(html, { waitUntil: "load", timeout: 15000 });
-      await page.evaluate(() => document.fonts.ready);
-      await page.waitForTimeout(500);
-      const pdf = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
-      });
-      return reply.type("application/pdf").send(pdf);
-    } finally {
-      await browser.close();
-    }
+    const pdf = await renderPdf(html);
+    return reply.type("application/pdf").send(pdf);
   });
   return app;
 }

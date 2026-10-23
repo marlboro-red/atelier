@@ -159,7 +159,13 @@ async function bundle(content: Content, entry: string, react = false) {
               const pkg = args.path.startsWith("@")
                 ? args.path.split("/").slice(0, 2).join("/")
                 : args.path.split("/")[0];
-              if (!allowed.has(pkg))
+              if (
+                !allowed.has(pkg) ||
+                args.path.includes("\\") ||
+                args.path
+                  .split("/")
+                  .some((part) => !part || part === "." || part === "..")
+              )
                 return {
                   errors: [
                     {
@@ -636,6 +642,15 @@ export async function render(
       }
   }
   const title = findTitle(parse(rendered));
+  function textContent(node: DefaultTreeAdapterMap["node"]): string {
+    if ("value" in node) return node.value;
+    return "childNodes" in node
+      ? node.childNodes.map(textContent).join("")
+      : "";
+  }
+  // SVG titles can contain elements. Never promote serialized artifact markup
+  // into the trusted viewer's HTML title (an HTML RCDATA context).
+  const titleText = attribute(title ? textContent(title) : "Atelier artifact");
   const storage = `const __name=(fn)=>fn;(${exportDataBridge.toString()})(${escape(JSON.stringify({ id: options.id, data: options.data ?? null }))});`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${artifactPolicy}"><title>${title ? serialize(title) : "Atelier artifact"}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style><script>${storage.replace(/<\/script/gi, "<\\/script")}</script></head><body><iframe title="Artifact" sandbox="allow-scripts" srcdoc="${attribute(rendered)}"></iframe></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${artifactPolicy}"><title>${titleText}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style><script>${storage.replace(/<\/script/gi, "<\\/script")}</script></head><body><iframe title="Artifact" sandbox="allow-scripts" srcdoc="${attribute(rendered)}"></iframe></body></html>`;
 }

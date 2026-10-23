@@ -158,3 +158,95 @@ test("downloaded HTML preserves saved data and in-page links inside the sandbox"
   await page.reload();
   await expect(frame.locator("output")).toHaveText('{"saved":true}');
 });
+
+test("an SVG title cannot inject scripts into the trusted HTML export viewer", async ({
+  page,
+  request,
+}, testInfo) => {
+  const response = await request.post("/api/artifacts", {
+    data: {
+      title: "Hostile SVG title",
+      content: {
+        kind: "svg",
+        entry: "image.svg",
+        files: {
+          "image.svg":
+            "<svg><title><script></title><script>window.exportEscaped=true</script></script></title><text>Diagram</text></svg>",
+        },
+      },
+    },
+  });
+  expect(response.status()).toBe(201);
+  const artifact = await response.json();
+  const exported = await request.post(`/api/artifacts/${artifact.id}/export`, {
+    data: { format: "html", revision: 1 },
+  });
+  expect(exported.ok()).toBe(true);
+  const path = testInfo.outputPath("hostile-title.html");
+  await writeFile(path, await exported.text());
+  await page.goto(pathToFileURL(path).href);
+  expect(
+    await page.evaluate(() => (window as any).exportEscaped),
+  ).toBeUndefined();
+  await expect(page.locator("iframe")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts",
+  );
+  expect(await page.locator("script").count()).toBe(1);
+});
+
+test("malformed artifact messages cannot crash the workspace or forge a selection", async ({
+  page,
+  request,
+}) => {
+  const response = await request.post("/api/artifacts", {
+    data: {
+      title: "Message boundary",
+      content: {
+        kind: "html",
+        entry: "index.html",
+        files: {
+          "index.html": '<h1 style="margin-top:100px">Safe heading</h1>',
+        },
+      },
+    },
+  });
+  const artifact = await response.json();
+  await page.goto("/a/" + artifact.id);
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator("h1")).toBeVisible();
+  await frame.locator("body").evaluate(() =>
+    parent.postMessage(
+      {
+        atelier: true,
+        type: "selection",
+        anchor: { quote: "Unrequested selection" },
+      },
+      "*",
+    ),
+  );
+  await expect(page.locator(".review-panel")).toHaveCount(0);
+  await page.getByRole("button", { name: "Open review tools" }).click();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("button", { name: "Select a detail" }).click();
+  await expect(frame.locator("html")).toHaveCSS("cursor", "crosshair");
+  await frame.locator("body").evaluate(() => {
+    parent.postMessage(
+      {
+        atelier: true,
+        type: "selection",
+        anchor: { quote: { malformed: true } },
+      },
+      "*",
+    );
+    parent.postMessage(
+      { atelier: true, type: "runtime-error", message: { toString: null } },
+      "*",
+    );
+  });
+  await frame.locator("h1").click();
+  await expect(page.locator(".selected-quote")).toContainText("Safe heading");
+  await expect(
+    page.getByRole("banner", { name: "Artifact toolbar" }),
+  ).toBeVisible();
+});

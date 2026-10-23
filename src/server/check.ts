@@ -57,6 +57,7 @@ export async function checkPreview(
       );
       return result("unavailable");
     }
+    if (expired) throw new Error("Preview check exceeded its time limit");
     const page = await browser.newPage({ viewport });
     page.setDefaultTimeout(10000);
     page.on("pageerror", (error) => add(errors, error.message));

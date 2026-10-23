@@ -335,7 +335,7 @@ Write requests accept these fields:
 | Export | `revision`, `format` | `snapshot` |
 | Preview check | None | `revision`, `width`, `height`, `screenshot` |
 
-The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. The API body limit is 32 MiB.
+The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. PDF rendering allows at most two concurrent browser jobs; additional requests return `503`. A job that exceeds 30 seconds is stopped and returns `504`. The API body limit is 32 MiB.
 
 ## Development commands
 
@@ -356,6 +356,6 @@ Browser tests use separate ports and `.atelier/test` data. Screenshots and failu
 
 Atelier is a local, single-user service. It has no public hosting, team accounts, agent execution engine, in-artifact model calls, external app connections, or video support.
 
-Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Preview URLs only run when embedded by the workspace. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code.
+Generated code runs in a separate-origin iframe without same-origin privileges. Preview policy allows Google Fonts stylesheets from `https://fonts.googleapis.com` and font files from `https://fonts.gstatic.com`. Other network requests and embedded frames are blocked. The workspace and exported HTML viewer also restrict frame navigation, so artifacts cannot bypass the resource policy by replacing themselves with an external page. Preview URLs only run when embedded by the workspace. PDF export allows the same font sources. HTML exports keep these remote font references and need internet access to load them; use embedded fonts when offline fidelity is required. Artifacts cannot install arbitrary packages or execute server code. Package imports reject traversal segments, and artifact titles are copied into HTML export wrappers as escaped text. Selection messages are validated and only accepted while the user is selecting a detail.
 
 The API rejects unrecognized hostnames and disallowed origins. Local processes running as the same OS user are trusted. Atelier is not a security boundary between users of the computer.

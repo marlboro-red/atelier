@@ -17,6 +17,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { anchorSchema } from "../shared/schema";
 import type { Artifact, Revision, Comment, Anchor } from "../shared/schema";
 import "./style.css";
 async function api<T = any>(
@@ -268,13 +269,17 @@ function App() {
         return;
       const msg = event.data;
       if (msg.type === "selection") {
-        setAnchor(msg.anchor);
+        const selection = anchorSchema.safeParse(msg.anchor);
+        if (!selecting || !selection.success) return;
+        setAnchor(selection.data);
         setSelecting(false);
         setPanel("comments");
         setReviewOpen(true);
       }
-      if (msg.type === "runtime-error")
-        setRuntimeErrors((old) => [...new Set([...old, msg.message])]);
+      if (msg.type === "runtime-error" && typeof msg.message === "string")
+        setRuntimeErrors((old) =>
+          [...new Set([...old, msg.message.slice(0, 1500)])].slice(0, 20),
+        );
       if (msg.type === "snapshot") {
         snapshotResolvers.current.get(msg.requestId)?.(msg.snapshot);
         snapshotResolvers.current.delete(msg.requestId);
