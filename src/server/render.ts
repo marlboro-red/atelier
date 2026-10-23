@@ -120,16 +120,18 @@ async function bundle(content: Content, entry: string, react = false) {
     define: { "process.env.NODE_ENV": '"production"' },
     stdin: {
       contents: react
-        ? `import React from 'react';import {createRoot} from 'react-dom/client';import App from './${entry}';createRoot(document.getElementById('artifact-root')).render(React.createElement(App));`
-        : `import './${entry}';`,
-      resolveDir: process.cwd(),
+        ? `import React from 'react';import {createRoot} from 'react-dom/client';import App from ${JSON.stringify("./" + entry)};createRoot(document.getElementById('artifact-root')).render(React.createElement(App));`
+        : `import ${JSON.stringify("./" + entry)};`,
       sourcefile: "__bootstrap.tsx",
     },
     plugins: [
       {
         name: "artifact-files",
         setup(b) {
-          b.onResolve({ filter: /.*/ }, (args) => {
+          const dependencyFiles = new Set<string>();
+          const resolvingDependency = {};
+          b.onResolve({ filter: /.*/ }, async (args) => {
+            if (args.pluginData === resolvingDependency) return;
             if (
               args.namespace === "artifact" ||
               args.importer.endsWith("__bootstrap.tsx")
@@ -173,9 +175,43 @@ async function bundle(content: Content, entry: string, react = false) {
                     },
                   ],
                 };
-              return { path: require.resolve(args.path) };
+              const path = require.resolve(args.path);
+              dependencyFiles.add(path);
+              return { path };
             }
-            return undefined;
+            if (
+              args.namespace === "file" &&
+              dependencyFiles.has(args.importer)
+            ) {
+              const result = await b.resolve(args.path, {
+                importer: args.importer,
+                namespace: args.namespace,
+                resolveDir: args.resolveDir,
+                kind: args.kind,
+                with: args.with,
+                pluginData: resolvingDependency,
+              });
+              if (result.path && !result.external)
+                dependencyFiles.add(result.path);
+              return result;
+            }
+            return {
+              errors: [
+                { text: "Import is outside the artifact dependency graph" },
+              ],
+            };
+          });
+          // esbuild's computed-import glob expansion bypasses onResolve. Gate
+          // filesystem reads as well as imports, including glob-generated loads.
+          b.onLoad({ filter: /.*/, namespace: "file" }, (args) => {
+            if (!dependencyFiles.has(args.path))
+              return {
+                errors: [
+                  {
+                    text: "Filesystem imports outside declared dependencies are blocked; use literal imports for artifact files",
+                  },
+                ],
+              };
           });
           b.onLoad({ filter: /.*/, namespace: "artifact" }, (args) => {
             const ext = posix.extname(args.path).slice(1);
@@ -194,7 +230,6 @@ async function bundle(content: Content, entry: string, react = false) {
             return {
               contents: content.files[args.path],
               loader,
-              resolveDir: process.cwd(),
             };
           });
         },

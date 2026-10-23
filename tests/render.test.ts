@@ -1,3 +1,5 @@
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join, basename } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render } from "../src/server/render.js";
@@ -107,4 +109,49 @@ test("normalizes HTML documents without losing attributes, head content, or scri
   assert.match(html, /window.example = "<body>literal<\/body>"/);
   assert.doesNotMatch(html, /iso-8859-1|width=500/);
   assert.equal((html.match(/name="viewport"/g) ?? []).length, 1);
+});
+
+test("computed imports cannot glob files from the service filesystem", async () => {
+  const dir = mkdtempSync(join(process.cwd(), ".security-canary-"));
+  writeFileSync(join(dir, "secret.json"), '{"value":"PRIVATE_CANARY"}');
+  try {
+    const prefix = "./" + basename(dir) + "/";
+    for (const expression of [
+      `import(${JSON.stringify(prefix)} + window.file + '.json')`,
+      `require(${JSON.stringify(prefix)} + window.file + '.json')`,
+      `import(\`${prefix}\${window.file}.json\`)`,
+    ]) {
+      await assert.rejects(
+        render(
+          {
+            kind: "react",
+            entry: "App.jsx",
+            files: {
+              "App.jsx": `${expression}; export default function App(){return null}`,
+            },
+          },
+          { id: "test", revision: 1 },
+        ),
+        /Filesystem imports outside declared dependencies/,
+      );
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("literal dynamic imports stay inside the supplied files and quoted entry names are safe", async () => {
+  const html = await render(
+    {
+      kind: "react",
+      entry: "App's.jsx",
+      files: {
+        "App's.jsx":
+          "import('./data.json').then(x=>console.log(x));export default function App(){return null}",
+        "data.json": '{"value":"SUPPLIED_ARTIFACT_DATA"}',
+      },
+    },
+    { id: "test", revision: 1 },
+  );
+  assert.match(html, /SUPPLIED_ARTIFACT_DATA/);
 });
