@@ -96,19 +96,35 @@ function App() {
       return;
     }
     let cancelled = false;
-    const update = () =>
-      api(`/artifacts/${locationState.id}/feedback`)
-        .then((value) => {
-          if (!cancelled) setFeedback(value);
-        })
-        .catch(() => {
-          if (!cancelled) setFeedback(null);
-        });
+    let updating = false;
+    const update = async () => {
+      if (updating) return;
+      updating = true;
+      try {
+        const [status, threads] = await Promise.all([
+          api(`/artifacts/${locationState.id}/feedback`),
+          api<Comment[]>(`/artifacts/${locationState.id}/comments`),
+        ]);
+        if (!cancelled) {
+          setFeedback(status);
+          setComments(threads);
+        }
+      } catch {
+        // Preserve the last known thread state during a transient outage.
+      } finally {
+        updating = false;
+      }
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") void update();
+    };
+    document.addEventListener("visibilitychange", visible);
     void update();
     const timer = setInterval(update, 3000);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [locationState.id]);
   function popupPosition(x: number, y: number) {
@@ -305,6 +321,8 @@ function App() {
     run(refresh);
     const events = new EventSource("/api/events");
     events.onmessage = () => run(refresh);
+    // Events sent while disconnected are not replayed by the server.
+    events.onopen = () => run(refresh);
     return () => {
       events.close();
       loading.current++;
@@ -890,201 +908,6 @@ function App() {
                   </header>
                   {panel === "comments" ? (
                     <>
-                      <div className="feedback-status" role="status">
-                        <span>
-                          {feedback?.connected
-                            ? feedback.state === "needs_permission"
-                              ? `${feedback.provider} needs permission in the terminal`
-                              : feedback.state === "awaiting_agent"
-                                ? "Waiting for Claude to read the comments"
-                                : feedback.state === "working"
-                                  ? `${feedback.provider} is handling feedback`
-                                  : `${feedback.provider} connected`
-                            : "No agent connected"}
-                        </span>
-                        {feedback?.connected && (
-                          <button
-                            onClick={() =>
-                              run(async () => {
-                                await api(
-                                  `/artifacts/${artifact.id}/feedback/disconnect`,
-                                  post({}),
-                                );
-                                setFeedback(null);
-                              })
-                            }
-                          >
-                            Disconnect
-                          </button>
-                        )}
-                        {!!feedback?.queued && (
-                          <small>
-                            {feedback.queued} feedback event
-                            {feedback.queued === 1 ? "" : "s"} queued
-                          </small>
-                        )}
-                        {!!feedback?.uncertain && (
-                          <div>
-                            <small>
-                              Delivery was interrupted. Check the thread before
-                              retrying.
-                            </small>
-                            <button
-                              onClick={() =>
-                                run(async () => {
-                                  await api(
-                                    `/artifacts/${artifact.id}/feedback/retry`,
-                                    post({}),
-                                  );
-                                  setFeedback(
-                                    await api(
-                                      `/artifacts/${artifact.id}/feedback`,
-                                    ),
-                                  );
-                                })
-                              }
-                            >
-                              Retry uncertain deliveries
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {!feedback?.connected && (
-                        <details
-                          className="agent-connect"
-                          onToggle={(event) => {
-                            if (
-                              event.currentTarget.open &&
-                              connectionProvider === "codex"
-                            )
-                              void loadSessions();
-                          }}
-                        >
-                          <summary>Connect an agent</summary>
-                          <label>
-                            Agent{" "}
-                            <select
-                              value={connectionProvider}
-                              onChange={(event) => {
-                                setConnectionProvider(event.target.value);
-                                if (event.target.value === "codex")
-                                  void loadSessions();
-                              }}
-                            >
-                              <option value="codex">Codex</option>
-                              <option value="claude">Claude Code</option>
-                              <option value="copilot">
-                                GitHub Copilot CLI
-                              </option>
-                            </select>
-                          </label>
-                          {connectionProvider === "codex" ? (
-                            <>
-                              <p>
-                                Choose the conversation that should receive your
-                                comments. Keep Codex open.
-                              </p>
-                              {sessionsLoading && (
-                                <p role="status">
-                                  Looking for open conversations…
-                                </p>
-                              )}
-                              {sessionsError && (
-                                <p role="alert">{sessionsError}</p>
-                              )}
-                              {!sessionsLoading &&
-                                !sessionsError &&
-                                !openSessions.length && (
-                                  <p>
-                                    No open conversations. Open your
-                                    conversation in Codex, then refresh.
-                                  </p>
-                                )}
-                              <div className="conversation-list">
-                                {openSessions.map((session) => (
-                                  <div
-                                    className="conversation-option"
-                                    key={session.id}
-                                  >
-                                    <div>
-                                      <strong>{session.title}</strong>
-                                      <small title={session.project}>
-                                        {session.project
-                                          .split(/[\\/]/)
-                                          .filter(Boolean)
-                                          .slice(-2)
-                                          .join("/") || "No project"}{" "}
-                                        ·{" "}
-                                        {session.state === "active"
-                                          ? "Working"
-                                          : "Ready"}
-                                      </small>
-                                    </div>
-                                    <button
-                                      disabled={connectingSession !== null}
-                                      aria-label={`Connect to ${session.title}`}
-                                      onClick={async () => {
-                                        setConnectingSession(session.id);
-                                        setSessionsError("");
-                                        try {
-                                          const targetId = artifact.id;
-                                          const status = await api(
-                                            `/artifacts/${targetId}/feedback/codex`,
-                                            post({ session: session.id }),
-                                          );
-                                          if (route().id !== targetId) return;
-                                          setFeedback(status);
-                                          notify(
-                                            "Comments connected to your Codex conversation",
-                                          );
-                                        } catch (error) {
-                                          setSessionsError(
-                                            error instanceof Error
-                                              ? error.message
-                                              : String(error),
-                                          );
-                                        } finally {
-                                          setConnectingSession(null);
-                                        }
-                                      }}
-                                    >
-                                      {connectingSession === session.id
-                                        ? "Connecting…"
-                                        : "Connect"}
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                              <button
-                                disabled={sessionsLoading}
-                                onClick={() => void loadSessions()}
-                              >
-                                Refresh conversations
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <p>
-                                Run this command in the agent's working
-                                directory. Keep the terminal open.
-                              </p>
-                              <code>{connectionCommand}</code>
-                              <button
-                                onClick={() =>
-                                  run(async () => {
-                                    await navigator.clipboard.writeText(
-                                      connectionCommand,
-                                    );
-                                    notify("Connection command copied");
-                                  })
-                                }
-                              >
-                                <Copy size={12} /> Copy command
-                              </button>
-                            </>
-                          )}
-                        </details>
-                      )}
                       {activeComment && (
                         <button
                           className="all-comments"
@@ -1129,9 +952,6 @@ function App() {
                               data-active={activeComment === c.id}
                             >
                               <div className="comment-meta">
-                                <span className="avatar">
-                                  {c.author.charAt(0)}
-                                </span>
                                 <strong>{c.author}</strong>
                                 <button
                                   onClick={() =>
@@ -1183,17 +1003,15 @@ function App() {
                                 </div>
                               ))}
                               <div className="comment-status" role="status">
-                                {c.acknowledgedAt && c.status !== "open" && (
-                                  <span
-                                    className="acknowledged"
-                                    title={new Date(
-                                      c.acknowledgedAt,
-                                    ).toLocaleString()}
-                                  >
-                                    Acknowledged
-                                  </span>
-                                )}
-                                <span className={"status " + c.status}>
+                                <span
+                                  className={"status " + c.status}
+                                  data-read={!!c.acknowledgedAt}
+                                  title={
+                                    c.acknowledgedAt
+                                      ? `Acknowledged ${new Date(c.acknowledgedAt).toLocaleString()}`
+                                      : undefined
+                                  }
+                                >
                                   {
                                     {
                                       open: c.acknowledgedAt
@@ -1206,6 +1024,11 @@ function App() {
                                   }
                                 </span>
                                 <button
+                                  aria-label={
+                                    c.status === "resolved"
+                                      ? "Reopen comment"
+                                      : "Resolve comment"
+                                  }
                                   title={
                                     c.status === "resolved"
                                       ? "Reopen comment"
@@ -1235,6 +1058,11 @@ function App() {
                                   ) : (
                                     <Check size={14} />
                                   )}
+                                  <span>
+                                    {c.status === "resolved"
+                                      ? "Reopen"
+                                      : "Resolve"}
+                                  </span>
                                 </button>
                               </div>
                               <form
@@ -1276,6 +1104,203 @@ function App() {
                           ))}
                       </div>
                       {!composerPosition && !activeComment && composer}
+                      <div className="comment-connection">
+                        <div className="feedback-status" role="status">
+                          <span>
+                            {feedback?.connected
+                              ? feedback.state === "needs_permission"
+                                ? `${feedback.provider} needs permission in the terminal`
+                                : feedback.state === "awaiting_agent"
+                                  ? "Waiting for Claude to read the comments"
+                                  : feedback.state === "working"
+                                    ? `${feedback.provider} is handling feedback`
+                                    : `${feedback.provider} connected`
+                              : "No agent connected"}
+                          </span>
+                          {feedback?.connected && (
+                            <button
+                              onClick={() =>
+                                run(async () => {
+                                  await api(
+                                    `/artifacts/${artifact.id}/feedback/disconnect`,
+                                    post({}),
+                                  );
+                                  setFeedback(null);
+                                })
+                              }
+                            >
+                              Disconnect
+                            </button>
+                          )}
+                          {!!feedback?.queued && (
+                            <small>
+                              {feedback.queued} feedback event
+                              {feedback.queued === 1 ? "" : "s"} queued
+                            </small>
+                          )}
+                          {!!feedback?.uncertain && (
+                            <div>
+                              <small>
+                                Delivery was interrupted. Check the thread
+                                before retrying.
+                              </small>
+                              <button
+                                onClick={() =>
+                                  run(async () => {
+                                    await api(
+                                      `/artifacts/${artifact.id}/feedback/retry`,
+                                      post({}),
+                                    );
+                                    setFeedback(
+                                      await api(
+                                        `/artifacts/${artifact.id}/feedback`,
+                                      ),
+                                    );
+                                  })
+                                }
+                              >
+                                Retry uncertain deliveries
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {!feedback?.connected && (
+                          <details
+                            className="agent-connect"
+                            onToggle={(event) => {
+                              if (
+                                event.currentTarget.open &&
+                                connectionProvider === "codex"
+                              )
+                                void loadSessions();
+                            }}
+                          >
+                            <summary>Connect an agent</summary>
+                            <label>
+                              Agent{" "}
+                              <select
+                                value={connectionProvider}
+                                onChange={(event) => {
+                                  setConnectionProvider(event.target.value);
+                                  if (event.target.value === "codex")
+                                    void loadSessions();
+                                }}
+                              >
+                                <option value="codex">Codex</option>
+                                <option value="claude">Claude Code</option>
+                                <option value="copilot">
+                                  GitHub Copilot CLI
+                                </option>
+                              </select>
+                            </label>
+                            {connectionProvider === "codex" ? (
+                              <>
+                                <p>
+                                  Choose the conversation that should receive
+                                  your comments. Keep Codex open.
+                                </p>
+                                {sessionsLoading && (
+                                  <p role="status">
+                                    Looking for open conversations…
+                                  </p>
+                                )}
+                                {sessionsError && (
+                                  <p role="alert">{sessionsError}</p>
+                                )}
+                                {!sessionsLoading &&
+                                  !sessionsError &&
+                                  !openSessions.length && (
+                                    <p>
+                                      No open conversations. Open your
+                                      conversation in Codex, then refresh.
+                                    </p>
+                                  )}
+                                <div className="conversation-list">
+                                  {openSessions.map((session) => (
+                                    <div
+                                      className="conversation-option"
+                                      key={session.id}
+                                    >
+                                      <div>
+                                        <strong>{session.title}</strong>
+                                        <small title={session.project}>
+                                          {session.project
+                                            .split(/[\\/]/)
+                                            .filter(Boolean)
+                                            .slice(-2)
+                                            .join("/") || "No project"}{" "}
+                                          ·{" "}
+                                          {session.state === "active"
+                                            ? "Working"
+                                            : "Ready"}
+                                        </small>
+                                      </div>
+                                      <button
+                                        disabled={connectingSession !== null}
+                                        aria-label={`Connect to ${session.title}`}
+                                        onClick={async () => {
+                                          setConnectingSession(session.id);
+                                          setSessionsError("");
+                                          try {
+                                            const targetId = artifact.id;
+                                            const status = await api(
+                                              `/artifacts/${targetId}/feedback/codex`,
+                                              post({ session: session.id }),
+                                            );
+                                            if (route().id !== targetId) return;
+                                            setFeedback(status);
+                                            notify(
+                                              "Comments connected to your Codex conversation",
+                                            );
+                                          } catch (error) {
+                                            setSessionsError(
+                                              error instanceof Error
+                                                ? error.message
+                                                : String(error),
+                                            );
+                                          } finally {
+                                            setConnectingSession(null);
+                                          }
+                                        }}
+                                      >
+                                        {connectingSession === session.id
+                                          ? "Connecting…"
+                                          : "Connect"}
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                <button
+                                  disabled={sessionsLoading}
+                                  onClick={() => void loadSessions()}
+                                >
+                                  Refresh conversations
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <p>
+                                  Run this command in the agent's working
+                                  directory. Keep the terminal open.
+                                </p>
+                                <code>{connectionCommand}</code>
+                                <button
+                                  onClick={() =>
+                                    run(async () => {
+                                      await navigator.clipboard.writeText(
+                                        connectionCommand,
+                                      );
+                                      notify("Connection command copied");
+                                    })
+                                  }
+                                >
+                                  <Copy size={12} /> Copy command
+                                </button>
+                              </>
+                            )}
+                          </details>
+                        )}
+                      </div>
                     </>
                   ) : panel === "history" ? (
                     <>

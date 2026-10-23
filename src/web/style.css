@@ -1403,3 +1403,212 @@ button svg {
   color: #466638;
   font-size: 10px;
 }
+
+/* Comment popups share one quiet surface and a consistent spacing scale. */
+.comment-popover {
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e3e5e0;
+  border-radius: 14px;
+  box-shadow:
+    0 12px 40px #1d27191a,
+    0 2px 8px #1d271908;
+  color: #30362e;
+}
+.comment-popover > header {
+  min-height: 24px;
+  margin-bottom: 12px;
+}
+.comment-popover > header strong,
+.comment-popover > header h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.comment-popover > header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: #7b8177;
+}
+.comment-popover button:hover {
+  color: #273225;
+}
+.comment-popover > header button:hover {
+  background: #f3f4f1;
+}
+.comment-popover .all-comments {
+  margin: 0 0 12px;
+  font-size: 11px;
+  color: #737a6d;
+}
+.comment-popover .comments-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+.comment-popover .comment,
+.comment-popover .comment[data-active="true"] {
+  padding: 16px 0;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+  border-top: 1px solid #eceee8;
+  box-shadow: none;
+}
+.comment-popover .comment:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.comment-popover .comment-meta {
+  gap: 8px;
+  min-height: 22px;
+}
+.comment-popover .comment-meta strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333b30;
+}
+.comment-popover .comment-meta > button {
+  font-size: 11px;
+  color: #868c80;
+}
+.comment-popover .quote,
+.comment-popover .selected-quote {
+  margin: 10px 0 12px;
+  padding: 9px 11px;
+  border: 0;
+  border-left: 2px solid #cbd3c4;
+  border-radius: 0 6px 6px 0;
+  background: #f6f7f3;
+  color: #71796b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.comment-popover .comment > p,
+.comment-popover .reply p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #3e4638;
+  margin: 10px 0;
+}
+.comment-popover .reply {
+  padding: 12px 0 0;
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid #f0f1ec;
+}
+.comment-popover .reply strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #58684d;
+}
+.comment-popover .comment-status {
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+.comment-popover .status {
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #858b7e;
+}
+.comment-popover .status[data-read="true"] {
+  color: #607455;
+}
+.comment-popover .comment-status button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #7b8472;
+}
+.comment-popover .reply-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  margin: 0;
+  border: 1px solid #e3e6de;
+  border-radius: 9px;
+  background: #fafbf8;
+}
+.comment-popover .reply-form:focus-within {
+  border-color: #98a58b;
+  box-shadow: 0 0 0 2px #98a58b14;
+}
+.comment-popover .reply-form input {
+  min-width: 0;
+  padding: 5px 0;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+  color: #30382a;
+}
+.comment-popover .reply-form button,
+.comment-popover .send-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: #56654a;
+  color: white;
+}
+.comment-popover .reply-form button:hover,
+.comment-popover .send-button:hover {
+  background: #414f36;
+  color: white;
+}
+.comment-popover .composer {
+  border: 1px solid #e3e6de;
+  border-radius: 9px;
+  padding: 10px;
+  background: #fafbf8;
+}
+.comment-popover .composer textarea {
+  min-height: 72px;
+  font-size: 13px;
+  outline: 0;
+}
+.comment-popover .composer:focus-within {
+  border-color: #98a58b;
+}
+.comment-popover .composer > div > span {
+  font-size: 10px;
+  color: #858c7e;
+}
+.comment-popover .comment-connection {
+  border-top: 1px solid #eceee8;
+  padding-top: 10px;
+  margin-top: 8px;
+}
+.comment-popover .feedback-status {
+  margin: 0;
+  gap: 6px 12px;
+  font-size: 10px;
+  color: #858c7e;
+}
+.comment-popover .feedback-status small {
+  width: auto;
+}
+.comment-popover .agent-connect {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.comment-popover .comment-intro {
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+.comment-popover .comment-intro p {
+  margin: 0 0 8px;
+}
+.comment-popover .empty-comments {
+  padding: 24px 8px;
+}
+.comment-popover .comment-revision {
+  margin: 2px 0 8px;
+  font-size: 11px;
+}

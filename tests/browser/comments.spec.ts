@@ -460,3 +460,64 @@ test("conversation picker handles unavailable, empty, and closed sessions withou
   await expect(page.getByLabel("Codex session UUID")).toHaveCount(0);
   await expect(page.locator(".agent-connect code")).toHaveCount(0);
 });
+
+test("acknowledgements and replies update with the event stream unavailable, preserving the draft and page", async ({
+  page,
+  request,
+}) => {
+  // Model an unavailable SSE connection, not a page reload.
+  await page.addInitScript(() => {
+    window.EventSource = class {
+      onmessage = null;
+      onopen = null;
+      close() {}
+    } as unknown as typeof EventSource;
+  });
+  const a = await (
+    await request.post("/api/artifacts", {
+      data: {
+        title: "Offline event stream",
+        content: {
+          kind: "html",
+          entry: "index.html",
+          files: {
+            "index.html":
+              '<h1>Keep this page open</h1><input aria-label="Artifact input">',
+          },
+        },
+      },
+    })
+  ).json();
+  const c = await (
+    await request.post(`/api/artifacts/${a.id}/comments`, {
+      data: { revision: 1, body: "Check acknowledgement", author: "You" },
+    })
+  ).json();
+  await page.goto("/a/" + a.id);
+  await page
+    .frameLocator("iframe")
+    .getByLabel("Artifact input")
+    .fill("Keep my state");
+  await page.getByRole("button", { name: "Comments (1)", exact: true }).click();
+  const popup = page.getByRole("dialog", { name: "Comments", exact: true });
+  await popup.getByLabel("Reply to comment").fill("Unsent reply");
+  await expect(
+    popup.getByText("Not yet acknowledged", { exact: true }),
+  ).toBeVisible();
+  await request.post(`/api/artifacts/${a.id}/comments/read`, { data: {} });
+  await expect(popup.getByText("Acknowledged", { exact: true })).toBeVisible({
+    timeout: 10000,
+  });
+  await request.patch(`/api/artifacts/${a.id}/comments/${c.id}`, {
+    data: { reply: "Read your message", author: "Agent" },
+  });
+  await expect(popup.locator(".reply")).toContainText("Read your message", {
+    timeout: 10000,
+  });
+  await expect(popup.getByLabel("Reply to comment")).toHaveValue(
+    "Unsent reply",
+  );
+  await expect(
+    page.frameLocator("iframe").getByLabel("Artifact input"),
+  ).toHaveValue("Keep my state");
+});
