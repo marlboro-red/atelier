@@ -17,7 +17,7 @@ No Git required:
 3. Install and start:
 
    ```sh
-   npm ci
+   npm install
    npm link
    atelier install-browser
    atelier start
@@ -25,7 +25,7 @@ No Git required:
 
 Atelier is not published to the npm registry, so `npm install --global atelier` is not supported.
 
-`npm ci` builds the browser app automatically. Keep the extracted directory: `npm link` points the global command to it. These commands also work in a cloned repository.
+`npm install` builds the browser app automatically. Keep the extracted directory: `npm link` points the global command to it. These commands also work in a cloned repository.
 
 ### Download from the terminal
 
@@ -35,7 +35,7 @@ On macOS or Linux, you can download and extract the same ZIP without opening Git
 curl --fail --location https://github.com/marlboro-red/atelier/archive/refs/heads/main.zip --output atelier.zip
 unzip atelier.zip
 cd atelier-main
-npm ci
+npm install
 npm link
 atelier install-browser
 atelier start
