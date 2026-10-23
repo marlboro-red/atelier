@@ -4,55 +4,117 @@ Atelier is a local service that lets AI agents create interactive pages. A page 
 
 Agents create and revise the content through MCP, the CLI, or the HTTP API. You open the page in your browser, leave comments, and export a revision as HTML or PDF. Each artifact keeps the same URL and its revision history.
 
-## Start Atelier
+## Install and start
 
 Requires Node.js 22.13 or later and npm.
 
-1. In the repository directory, install the dependencies and build the browser app.
+### Install from GitHub
+
+With Git installed, run:
+
+```sh
+npm install --global github:marlboro-red/atelier
+atelier install-browser
+atelier start
+```
+
+npm downloads the source and builds the app. You do not need to clone or manage a repository. `install-browser` downloads Chromium for PDF export; skip it if you only need HTML export.
+
+Atelier is not published to the npm registry. Use the full GitHub package name above.
+
+### Install from a ZIP
+
+No Git required:
+
+1. [Download the source ZIP](https://github.com/marlboro-red/atelier/archive/refs/heads/main.zip) and extract it.
+2. Open a terminal in the extracted `atelier-main` directory.
+3. Install and start:
 
    ```sh
    npm ci
-   npm run build
+   npm link
+   atelier install-browser
+   atelier start
    ```
 
-2. Install Chromium for PDF export.
+`npm ci` builds the browser app automatically. Keep the extracted directory: `npm link` points the global command to it. These commands also work in a cloned repository.
 
-   ```sh
-   npx playwright install chromium
-   ```
+The service opens [Atelier](http://atelier.localhost:4310) in your browser. If that hostname does not resolve, open [127.0.0.1:4310](http://127.0.0.1:4310).
 
-3. Start the service.
-
-   ```sh
-   node bin/atelier.mjs start
-   ```
-
-   The command opens [Atelier](http://atelier.localhost:4310) in your browser. If that hostname does not resolve, open [127.0.0.1:4310](http://127.0.0.1:4310).
-
-   Keep the process running while you use Atelier. The `start` command runs in the foreground. It does not install a background service.
+Keep the terminal process running while you use Atelier. `atelier start` runs in the foreground; it does not install a background service.
 
 ## Connect your agent
 
-Atelier provides an MCP server over stdio. The MCP server connects to the running local service and needs no model API key.
+Atelier provides an MCP server over stdio. It connects to the running local service and needs no model API key. Use an agent client on the same computer as Atelier.
 
-Add this entry to your agent's MCP configuration. Replace `/absolute/path/to/atelier` with the repository path.
+### Codex
+
+```sh
+codex mcp add atelier -- atelier mcp
+```
+
+### Claude Code
+
+```sh
+claude mcp add --transport stdio --scope user atelier -- atelier mcp
+```
+
+This adds Atelier for all your projects. Run `/mcp` in Claude Code to check the connection. See [Claude Code's MCP setup](https://code.claude.com/docs/en/mcp).
+
+### Claude Desktop
+
+Open **Settings → Developer → Edit Config**. Add `atelier` to the existing `mcpServers` object, or use this configuration if the file is empty:
 
 ```json
 {
 	"mcpServers": {
 		"atelier": {
-			"command": "node",
-			"args": ["/absolute/path/to/atelier/bin/atelier.mjs", "mcp"]
+			"command": "atelier",
+			"args": ["mcp"]
 		}
 	}
 }
 ```
 
-For Codex, register the same server with the CLI instead:
+Save the file and fully quit and reopen Claude Desktop. See the [local MCP setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers).
+
+### GitHub Copilot in VS Code
+
+Create `.vscode/mcp.json` in your project, or add `atelier` to its existing `servers` object:
+
+```json
+{
+	"servers": {
+		"atelier": {
+			"type": "stdio",
+			"command": "atelier",
+			"args": ["mcp"]
+		}
+	}
+}
+```
+
+Run **MCP: List Servers** from the Command Palette, select **atelier**, and start it. Accept the trust prompt, then use Copilot in Agent mode with the Atelier tools enabled. See [VS Code's MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
+
+### GitHub Copilot CLI
 
 ```sh
-codex mcp add atelier -- node /absolute/path/to/atelier/bin/atelier.mjs mcp
+copilot mcp add atelier -- atelier mcp
 ```
+
+### If the client cannot find Atelier
+
+Desktop apps may not inherit your terminal's PATH. On Windows, using Node directly also avoids relying on an npm command shim.
+
+Run `node -p "process.execPath"` to find Node, and `npm root --global` to find your global packages directory. In the client configuration, replace `command` with the absolute Node path and use:
+
+```json
+"args": ["/absolute/global/packages/atelier/bin/atelier.mjs", "mcp"]
+```
+
+For a ZIP install or clone, you can instead point to `bin/atelier.mjs` in that directory. Escape Windows backslashes as `\\` in JSON, or use forward slashes.
+
+### Create your first artifact
 
 Start a new agent session to load the connection. Ask the agent to create an artifact:
 

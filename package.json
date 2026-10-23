@@ -14,7 +14,8 @@
     "test:browser": "playwright test",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write src tests *.ts *.json bin/*.mjs",
-    "format:check": "prettier --check src tests *.ts *.json bin/*.mjs"
+    "format:check": "prettier --check src tests *.ts *.json bin/*.mjs",
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=22.13"
@@ -31,10 +32,12 @@
     "marked": "^18.1.1",
     "mermaid": "^12.2.0",
     "pele": "^1.9.0",
+    "playwright": "^1.64.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "recharts": "^3.10.1",
     "sanitize-html": "^2.18.1",
+    "tsx": "^4.23.15",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -47,8 +50,14 @@
     "@types/sanitize-html": "^2.16.2",
     "@vitejs/plugin-react": "^6.1.2",
     "prettier": "^3.9.10",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
-  }
+  },
+  "files": [
+    "bin",
+    "src",
+    "dist/web",
+    "docs",
+    "tsconfig.json"
+  ]
 }

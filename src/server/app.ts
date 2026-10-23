@@ -198,14 +198,14 @@ export function createApp(store: Store, previewPort = 4311) {
       `attachment; filename="${name}.${input.format}"`,
     );
     if (input.format === "html") return reply.type("text/html").send(html);
-    const { chromium } = await import("@playwright/test");
+    const { chromium } = await import("playwright");
     let browser;
     try {
       browser = await chromium.launch({ headless: true });
     } catch {
       throw new HttpError(
         503,
-        "PDF browser is missing. Run: npx playwright install chromium",
+        "PDF browser is missing. Run: atelier install-browser",
       );
     }
     try {

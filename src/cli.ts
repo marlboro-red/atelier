@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -25,6 +26,26 @@ const program = new Command()
   .name("atelier")
   .description("A local workspace for artifacts, made with any agent")
   .version("0.1.0");
+program
+  .command("install-browser")
+  .description("Install Chromium for PDF export")
+  .action(async () => {
+    const require = createRequire(import.meta.url);
+    const cli = resolve(
+      dirname(require.resolve("playwright/package.json")),
+      "cli.js",
+    );
+    const child = spawn(process.execPath, [cli, "install", "chromium"], {
+      stdio: "inherit",
+    });
+    child.on("error", (error) => {
+      console.error(error.message);
+      process.exitCode = 1;
+    });
+    child.on("exit", (code) => {
+      process.exitCode = code ?? 1;
+    });
+  });
 program
   .command("start")
   .description("Start the workspace and open your browser")
