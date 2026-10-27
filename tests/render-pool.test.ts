@@ -17,10 +17,12 @@ test("render jobs time out without blocking the service event loop and reject ov
   const timer = setInterval(() => ticks++, 10);
   try {
     const jobs = Promise.allSettled([
-      pool.run(content, options),
-      pool.run(content, options),
+      pool.run(content, { id: "test", revision: 1 }),
+      pool.run(content, { id: "test", revision: 2 }),
     ]);
-    await assert.rejects(pool.run(content, options), { statusCode: 503 });
+    await assert.rejects(pool.run(content, { id: "test", revision: 3 }), {
+      statusCode: 503,
+    });
     for (const result of await jobs) {
       assert.equal(result.status, "rejected");
       if (result.status === "rejected")
@@ -54,4 +56,23 @@ test("the isolated renderer compiles supplied content and rejects work after shu
   assert.match(await pool.run(content, options), /<h1>Rendered<\/h1>/);
   pool.close();
   await assert.rejects(pool.run(content, options), { statusCode: 503 });
+});
+test("identical renders share one job and later views reuse the result", async () => {
+  const pool = new RenderPool(
+    new URL("./fixtures/render-env.mjs", import.meta.url),
+  );
+  try {
+    const [first, second] = await Promise.all([
+      pool.run(content, options),
+      pool.run(content, options),
+    ]);
+    assert.equal(first, second);
+    assert.equal(await pool.run(content, options), first);
+    assert.notEqual(
+      await pool.run(content, { ...options, data: { changed: true } }),
+      first,
+    );
+  } finally {
+    pool.close();
+  }
 });

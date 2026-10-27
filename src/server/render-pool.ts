@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,15 +8,53 @@ import type { render } from "./render.js";
 import { HttpError } from "./store.js";
 
 type RenderInput = Parameters<typeof render>;
+// Revisions are immutable, so identical input always renders the same document.
+// Reusing finished and in-flight renders avoids a process spawn and a full
+// dependency bundle on every view.
 export class RenderPool {
   private active = 0;
   private closed = false;
   private children = new Set<ChildProcess>();
+  private cache = new Map<string, string>();
+  private cachedBytes = 0;
+  private pending = new Map<string, Promise<string>>();
   constructor(
     private worker = new URL("./render-worker.mjs", import.meta.url),
     private deadlineMs = 30000,
+    private cacheBytes = 128 * 1024 * 1024,
   ) {}
   async run(...input: RenderInput): Promise<string> {
+    if (this.closed) throw new HttpError(503, "Renderer is stopping");
+    const key = createHash("sha256")
+      .update(JSON.stringify(input))
+      .digest("hex");
+    const cached = this.cache.get(key);
+    if (cached !== undefined) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const pending = this.pending.get(key);
+    if (pending) return pending;
+    const job = this.spawn(input).finally(() => this.pending.delete(key));
+    this.pending.set(key, job);
+    const html = await job;
+    this.remember(key, html);
+    return html;
+  }
+  private remember(key: string, html: string) {
+    const size = Buffer.byteLength(html);
+    if (this.closed || size > this.cacheBytes / 4 || this.cache.has(key))
+      return;
+    this.cache.set(key, html);
+    this.cachedBytes += size;
+    for (const [oldest, value] of this.cache) {
+      if (this.cachedBytes <= this.cacheBytes) break;
+      this.cache.delete(oldest);
+      this.cachedBytes -= Buffer.byteLength(value);
+    }
+  }
+  private async spawn(input: RenderInput): Promise<string> {
     if (this.closed || this.active >= 2)
       throw new HttpError(503, "Renderer is busy. Try again shortly.");
     this.active++;
@@ -113,6 +152,8 @@ export class RenderPool {
   }
   close() {
     this.closed = true;
+    this.cache.clear();
+    this.cachedBytes = 0;
     for (const child of this.children) this.stop(child);
   }
 }
