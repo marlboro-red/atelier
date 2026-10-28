@@ -714,3 +714,42 @@ test("overlapping viewer saves are serialized and stale viewers receive conflict
   });
   expect(stale.status()).toBe(409);
 });
+
+test("reopening a preview reuses its response but refreshes changed saved data", async ({
+  page,
+  request,
+}) => {
+  const a = await create(request, "Validated preview cache", {
+    kind: "html",
+    entry: "index.html",
+    files: {
+      "index.html":
+        '<h1 id="value"></h1><script>atelier.getData().then(data => document.getElementById("value").textContent=data?.note ?? "Initial")</script>',
+    },
+  });
+  await page.goto(`/a/${a.id}`);
+  const heading = page.frameLocator("iframe").getByRole("heading");
+  await expect(heading).toHaveText("Initial");
+  const reopen = async () => {
+    await page.getByRole("button", { name: "Back to artifacts" }).click();
+    const response = page.waitForResponse((r) =>
+      r.url().endsWith(`/artifacts/${a.id}/revisions/1/preview`),
+    );
+    await page
+      .locator(`[data-artifact-id="${a.id}"]`)
+      .getByRole("button", {
+        name: "Open Validated preview cache",
+        exact: true,
+      })
+      .click();
+    return response;
+  };
+  expect((await reopen()).status()).toBe(304);
+  await expect(heading).toHaveText("Initial");
+  const save = await request.put(`/api/artifacts/${a.id}/data`, {
+    data: { data: { note: "Updated" }, baseVersion: 0 },
+  });
+  expect(save.ok()).toBeTruthy();
+  expect((await reopen()).status()).toBe(200);
+  await expect(heading).toHaveText("Updated");
+});

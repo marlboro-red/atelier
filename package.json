@@ -22,6 +22,8 @@
   },
   "dependencies": {
     "@babel/parser": "^8.0.7",
+    "@fastify/accept-negotiator": "^2.1.2",
+    "@fastify/compress": "^9.3.0",
     "@fastify/static": "^10.1.7",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "commander": "^15.0.0",

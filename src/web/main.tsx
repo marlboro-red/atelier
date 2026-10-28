@@ -1,3 +1,4 @@
+import { loadPreview } from "./preview-cache";
 import { SourcePanel } from "./source-panel";
 import { useResources } from "./use-resources";
 import { artifactMessageSchema } from "../shared/bridge-messages";
@@ -259,13 +260,13 @@ function App() {
     };
   }, []);
   useEffect(() => {
-    if (!revision) {
+    if (!revision || revision.artifactId !== locationState.id) {
       setPreview(null);
       return;
     }
     let cancelled = false;
     const key = `${revision.artifactId}:${revision.number}`;
-    api<{ html: string }>(
+    loadPreview(
       `/artifacts/${revision.artifactId}/revisions/${revision.number}/preview`,
     )
       .then(({ html }) => {
@@ -277,7 +278,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [revision?.artifactId, revision?.number]);
+  }, [revision?.artifactId, revision?.number, locationState.id]);
   useEffect(() => {
     if (revision) {
       setSourceFile(revision.content.entry);
