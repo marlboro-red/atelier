@@ -332,3 +332,47 @@ test("queued events survive reopening the database and a dead idle adapter disco
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("feedback counts remain exact after terminal-event retention", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atelier-feedback-counts-"));
+  const store = new Store(dir);
+  try {
+    const feedback = new Feedback(store);
+    const a = store.create({
+      title: "Counts",
+      description: "",
+      author: "Test",
+      summary: "Initial",
+      content: {
+        kind: "html",
+        entry: "index.html",
+        files: { "index.html": "" },
+      },
+    });
+    const { token } = feedback.connect(a.id, "claude", "test");
+    store.transaction(() => {
+      const insert = store.prepare(
+        "INSERT INTO feedback_events(artifact_id,comment_id,kind,status,created_at) VALUES (?,?,'comment','delivered',0)",
+      );
+      for (let i = 0; i < 600; i++) insert.run(a.id, "test");
+    });
+    feedback.finish(a.id, token, []);
+    assert.equal(feedback.status(a.id).delivered, 600);
+    assert.equal(
+      store.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM feedback_events WHERE artifact_id=?",
+        )
+        .get(a.id)!.n,
+      500,
+    );
+    store.remove(a.id, 1);
+    assert.equal(
+      store.db.prepare("SELECT COUNT(*) AS n FROM feedback_counts").get()!.n,
+      0,
+    );
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

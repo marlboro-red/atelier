@@ -52,6 +52,7 @@ const route = () => {
 };
 type Panel = "comments" | "history" | "source" | "share" | null;
 function App() {
+  const [hasMoreArtifacts, setHasMoreArtifacts] = useState(false);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]),
     [locationState, setLocationState] = useState(route),
     [artifact, setArtifact] = useState<Artifact | null>(null),
@@ -386,7 +387,10 @@ function App() {
     try {
       const token = ++loading.current;
       if (!locationState.id) {
-        const list = await read<Artifact[]>("/artifacts");
+        const list = await read<Artifact[]>(
+          `/artifacts?search=${encodeURIComponent(search)}`,
+        );
+        setHasMoreArtifacts(list.length === 200);
         if (token !== loading.current) return;
         setArtifacts(list);
         setArtifact(null);
@@ -452,7 +456,7 @@ function App() {
       refreshController.current?.abort();
       loading.current++;
     };
-  }, [locationState.id, locationState.revision]);
+  }, [locationState.id, locationState.revision, search]);
   useEffect(() => {
     const pop = () => setLocationState(route());
     const key = (event: KeyboardEvent) => {
@@ -1641,7 +1645,7 @@ function App() {
             <h1>Artifacts</h1>
             <p>View, comment on, and export artifacts created by your agent.</p>
           </div>
-          {artifacts.length > 0 ? (
+          {artifacts.length > 0 || search ? (
             <>
               <div className="library-toolbar">
                 <h2>
@@ -1710,6 +1714,27 @@ function App() {
                     </div>
                   </article>
                 ))}
+                {hasMoreArtifacts && (
+                  <button
+                    onClick={() =>
+                      run(async () => {
+                        const last = artifacts.at(-1)!;
+                        const rows = await api<Artifact[]>(
+                          `/artifacts?cursor=${encodeURIComponent(last.updatedAt + "|" + last.id)}&search=${encodeURIComponent(search)}`,
+                        );
+                        setArtifacts((old) => [
+                          ...old,
+                          ...rows.filter(
+                            (row) => !old.some((item) => item.id === row.id),
+                          ),
+                        ]);
+                        setHasMoreArtifacts(rows.length === 200);
+                      })
+                    }
+                  >
+                    Load more artifacts
+                  </button>
+                )}
                 {!filtered.length && (
                   <p className="no-results">No artifacts match your search.</p>
                 )}

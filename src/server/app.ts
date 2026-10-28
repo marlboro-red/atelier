@@ -143,7 +143,17 @@ export function createApp(
     version: "0.1.0",
     previewPort,
   }));
-  app.get("/api/artifacts", async () => store.list());
+  app.get("/api/artifacts", async (req) =>
+    store.list(
+      z
+        .object({
+          limit: z.coerce.number().int().min(1).max(200).default(200),
+          cursor: z.string().max(300).optional(),
+          search: z.string().max(200).optional(),
+        })
+        .parse(req.query),
+    ),
+  );
   app.post("/api/artifacts", async (req, reply) => {
     const input = createSchema.parse(req.body);
     const a = store.create(input);

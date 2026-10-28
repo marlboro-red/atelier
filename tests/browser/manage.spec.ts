@@ -141,7 +141,7 @@ test("a visible thumbnail retries an unavailable check instead of remaining blan
   page,
 }) => {
   const id = "00000000-0000-0000-0000-000000000012";
-  await page.route("**/api/artifacts", (route) =>
+  await page.route(/\/api\/artifacts(?:\?.*)?$/, (route) =>
     route.fulfill({
       json: [
         {

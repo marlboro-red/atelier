@@ -269,3 +269,34 @@ test("versioned data saves reject stale writers and survive reopening", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("library pagination is stable at equal timestamps and search reaches later pages", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atelier-library-"));
+  const store = new Store(dir);
+  try {
+    for (let i = 0; i < 205; i++) {
+      const a = store.create({
+        title: i === 0 ? "Needle" : "Artifact",
+        description: "",
+        author: "Test",
+        summary: "Initial",
+        content,
+      });
+      store.db
+        .prepare(
+          "UPDATE artifacts SET data=json_set(data,'$.updatedAt','2026-01-01T00:00:00.000Z') WHERE id=?",
+        )
+        .run(a.id);
+    }
+    const first = store.list();
+    assert.equal(first.length, 200);
+    const last = first.at(-1)!;
+    const second = store.list({ cursor: `${last.updatedAt}|${last.id}` });
+    assert.equal(second.length, 5);
+    assert.equal(new Set([...first, ...second].map((a) => a.id)).size, 205);
+    assert.equal(store.list({ search: "needle" })[0].title, "Needle");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

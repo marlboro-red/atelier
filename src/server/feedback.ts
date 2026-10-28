@@ -24,6 +24,28 @@ export class Feedback {
         token TEXT, created_at INTEGER NOT NULL, error TEXT);
       CREATE INDEX IF NOT EXISTS feedback_pending ON feedback_events(artifact_id,status,id);
     `);
+    if (
+      !store
+        .prepare("SELECT name FROM sqlite_master WHERE name='feedback_counts'")
+        .get()
+    ) {
+      store.transaction(() =>
+        store.db.exec(`
+        CREATE TABLE feedback_counts (artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE, status TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(artifact_id,status));
+        INSERT INTO feedback_counts SELECT artifact_id,status,COUNT(*) FROM feedback_events GROUP BY artifact_id,status;
+        CREATE TRIGGER feedback_count_insert AFTER INSERT ON feedback_events BEGIN
+          INSERT INTO feedback_counts VALUES(NEW.artifact_id,NEW.status,1) ON CONFLICT(artifact_id,status) DO UPDATE SET n=n+1;
+        END;
+        CREATE TRIGGER feedback_count_update AFTER UPDATE OF status ON feedback_events WHEN OLD.status<>NEW.status BEGIN
+          UPDATE feedback_counts SET n=n-1 WHERE artifact_id=OLD.artifact_id AND status=OLD.status;
+          INSERT INTO feedback_counts VALUES(NEW.artifact_id,NEW.status,1) ON CONFLICT(artifact_id,status) DO UPDATE SET n=n+1;
+        END;
+        CREATE TRIGGER feedback_count_delete AFTER DELETE ON feedback_events WHEN OLD.status NOT IN ('delivered','cancelled') BEGIN
+          UPDATE feedback_counts SET n=n-1 WHERE artifact_id=OLD.artifact_id AND status=OLD.status;
+        END;
+      `),
+      );
+    }
   }
   enqueue(id: string, commentId: string, kind: string) {
     this.store
@@ -43,9 +65,7 @@ export class Feedback {
     const connected =
       !!c && !!c.enabled && Number(c.heartbeat) > this.now() - leaseMs;
     const counts = this.store
-      .prepare(
-        "SELECT status,COUNT(*) AS n FROM feedback_events WHERE artifact_id=? GROUP BY status",
-      )
+      .prepare("SELECT status,n FROM feedback_counts WHERE artifact_id=?")
       .all(id);
     const count = (status: string) =>
       Number(counts.find((r) => r.status === status)?.n ?? 0);
@@ -169,6 +189,16 @@ export class Feedback {
             id,
             token,
           );
+      // Retain bounded recent terminal detail; counters retain lifetime totals.
+      for (const status of ["delivered", "cancelled"])
+        this.store
+          .prepare(
+            `DELETE FROM feedback_events WHERE id IN (
+          SELECT id FROM feedback_events WHERE artifact_id=? AND status=? AND id < (
+            SELECT id FROM feedback_events WHERE artifact_id=? AND status=? ORDER BY id DESC LIMIT 1 OFFSET 499
+          ) LIMIT 100)`,
+          )
+          .run(id, status, id, status);
       return { ok: true };
     });
   }

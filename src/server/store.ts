@@ -48,6 +48,19 @@ export class Store {
       this.db.exec(
         "ALTER TABLE app_data ADD COLUMN version INTEGER NOT NULL DEFAULT 0",
       );
+    if (
+      !this.db
+        .prepare("PRAGMA table_xinfo(artifacts)")
+        .all()
+        .some((column) => column.name === "updated_at")
+    ) {
+      this.db.exec(
+        "ALTER TABLE artifacts ADD COLUMN updated_at TEXT GENERATED ALWAYS AS (json_extract(data,'$.updatedAt')) VIRTUAL",
+      );
+    }
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS artifacts_updated ON artifacts(updated_at DESC,id DESC)",
+    );
     // Migrate once, rather than parsing source blobs during every history read.
     if (
       !this.prepare(
@@ -63,18 +76,30 @@ export class Store {
       });
     }
   }
-  list(): Artifact[] {
+  list(
+    options: { limit?: number; cursor?: string; search?: string } = {},
+  ): Artifact[] {
+    const limit = Math.max(1, Math.min(200, options.limit ?? 200));
+    const split = options.cursor?.lastIndexOf("|") ?? -1;
+    if (options.cursor && split < 1)
+      throw new HttpError(400, "Invalid library cursor");
+    const date = options.cursor?.slice(0, split) ?? "9999";
+    const id = options.cursor?.slice(split + 1) ?? "~";
+    const search = (options.search ?? "").toLowerCase();
     return this.prepare(
-      "SELECT artifacts.data, thumbnails.revision AS thumbnail_revision, thumbnails.version AS thumbnail_version FROM artifacts LEFT JOIN thumbnails ON thumbnails.artifact_id=artifacts.id",
+      `SELECT artifacts.data, thumbnails.revision AS thumbnail_revision, thumbnails.version AS thumbnail_version
+      FROM artifacts LEFT JOIN thumbnails ON thumbnails.artifact_id=artifacts.id
+      WHERE (artifacts.updated_at,artifacts.id)<(?,?)
+      AND (?='' OR instr(lower(json_extract(artifacts.data,'$.title') || ' ' || json_extract(artifacts.data,'$.description')),?)>0)
+      ORDER BY artifacts.updated_at DESC,artifacts.id DESC LIMIT ?`,
     )
-      .all()
-      .map((r) => {
-        const artifact = JSON.parse(r.data as string);
-        if (r.thumbnail_revision === artifact.head)
-          artifact.thumbnailVersion = r.thumbnail_version;
+      .all(date, id, search, search, limit)
+      .map((row) => {
+        const artifact = JSON.parse(row.data as string);
+        if (row.thumbnail_revision === artifact.head)
+          artifact.thumbnailVersion = row.thumbnail_version;
         return artifact;
-      })
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      });
   }
   get(id: string): Artifact {
     const r = this.prepare("SELECT data FROM artifacts WHERE id=?").get(id);
@@ -130,7 +155,7 @@ export class Store {
         createdAt: now,
         updatedAt: now,
       };
-      this.prepare("INSERT INTO artifacts VALUES (?,?)").run(
+      this.prepare("INSERT INTO artifacts(id,data) VALUES (?,?)").run(
         a.id,
         JSON.stringify(a),
       );

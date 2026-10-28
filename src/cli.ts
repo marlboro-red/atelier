@@ -187,8 +187,24 @@ program
   });
 program
   .command("list")
-  .description("List artifacts")
-  .action(async () => print(await request("/artifacts")));
+  .description("List artifacts (up to 200 per page)")
+  .option("--search <text>")
+  .option(
+    "--cursor <cursor>",
+    "Continue after UPDATED_AT|ID from the last result",
+  )
+  .action(async (options) =>
+    print(
+      await request(
+        "/artifacts?" +
+          new URLSearchParams(
+            Object.entries(options).filter(
+              ([, value]) => typeof value === "string",
+            ) as [string, string][],
+          ),
+      ),
+    ),
+  );
 program
   .command("get <id>")
   .option("-r, --revision <number>")
@@ -807,9 +823,21 @@ program
       );
     tool(
       "list_artifacts",
-      "List all artifacts and their current revision.",
-      {},
-      () => request("/artifacts"),
+      "List a page of artifacts and current revisions. Continue using cursor UPDATED_AT|ID from the last result.",
+      {
+        limit: z.number().int().min(1).max(200).optional(),
+        cursor: z.string().optional(),
+        search: z.string().max(200).optional(),
+      },
+      (args) =>
+        request(
+          "/artifacts?" +
+            new URLSearchParams(
+              Object.entries(args)
+                .filter(([, value]) => value !== undefined)
+                .map(([key, value]) => [key, String(value)]),
+            ),
+        ),
     );
     tool(
       "get_artifact",
@@ -945,9 +973,21 @@ program
     );
     tool(
       "list_revisions",
-      "Read revision history and change summaries.",
-      { id: z.string() },
-      ({ id }) => request(`/artifacts/${segment(id)}/revisions`),
+      "Read a page of revision history. Continue with before equal to the last revision number.",
+      {
+        id: z.string(),
+        before: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+      ({ id, ...args }) =>
+        request(
+          `/artifacts/${segment(id)}/revisions?` +
+            new URLSearchParams(
+              Object.entries(args)
+                .filter(([, value]) => value !== undefined)
+                .map(([key, value]) => [key, String(value)]),
+            ),
+        ),
     );
     tool(
       "list_comments",
