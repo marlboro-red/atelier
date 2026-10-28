@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { render } from "./render.js";
 import { assemble, type CompiledDocument } from "./render-document.js";
 import { DiskCache } from "./disk-cache.js";
+import { JobQueue } from "./job-queue.js";
 import { HttpError } from "./store.js";
 
 type RenderInput = Parameters<typeof render>;
@@ -14,7 +15,7 @@ type RenderInput = Parameters<typeof render>;
 // Reusing finished and in-flight renders avoids a process spawn and a full
 // dependency bundle on every view.
 export class RenderPool {
-  private active = 0;
+  private queue = new JobQueue(2, 32);
   private closed = false;
   private children = new Set<ChildProcess>();
   private cache = new Map<string, string>();
@@ -97,7 +98,7 @@ export class RenderPool {
           /* Rebuild damaged cache entries. */
         }
       }
-      const result = await this.spawn(input);
+      const result = await this.queue.run(key, () => this.spawn(input));
       this.remember(key, result);
       await this.disk?.put(key, result);
       return result;
@@ -118,9 +119,7 @@ export class RenderPool {
     }
   }
   private async spawn(input: RenderInput): Promise<string> {
-    if (this.closed || this.active >= 2)
-      throw new HttpError(503, "Renderer is busy. Try again shortly.");
-    this.active++;
+    if (this.closed) throw new HttpError(503, "Renderer is stopping");
     let dir: string | undefined;
     try {
       dir = await mkdtemp(join(tmpdir(), "atelier-render-"));
@@ -206,11 +205,7 @@ export class RenderPool {
         });
       });
     } finally {
-      try {
-        if (dir) await rm(dir, { recursive: true, force: true });
-      } finally {
-        this.active--;
-      }
+      if (dir) await rm(dir, { recursive: true, force: true });
     }
   }
   private stop(child: ChildProcess) {
@@ -224,6 +219,7 @@ export class RenderPool {
   }
   close() {
     this.closed = true;
+    this.queue.close();
     this.cache.clear();
     this.cachedBytes = 0;
     for (const child of this.children) this.stop(child);

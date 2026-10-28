@@ -8,7 +8,7 @@ const content = {
   files: { "index.html": "<h1>Rendered</h1>" },
 };
 const options = { id: "test", revision: 1 };
-test("render jobs time out without blocking the service event loop and reject overload", async () => {
+test("render jobs time out without blocking the service event loop and release queued work", async () => {
   const pool = new RenderPool(
     new URL("./fixtures/render-hang.mjs", import.meta.url),
     500,
@@ -19,10 +19,8 @@ test("render jobs time out without blocking the service event loop and reject ov
     const jobs = Promise.allSettled([
       pool.run(content, { id: "test", revision: 1 }),
       pool.run(content, { id: "test", revision: 2 }),
+      pool.run(content, { id: "test", revision: 3 }),
     ]);
-    await assert.rejects(pool.run(content, { id: "test", revision: 3 }), {
-      statusCode: 503,
-    });
     for (const result of await jobs) {
       assert.equal(result.status, "rejected");
       if (result.status === "rejected")
@@ -107,4 +105,38 @@ test("compilation survives state changes, export variants, and pool restarts", a
     pool.close();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("distinct uncached renders queue instead of rejecting a burst", async () => {
+  const pool = new RenderPool();
+  try {
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        pool.run(
+          { ...content, files: { "index.html": `<h1>Document ${i}</h1>` } },
+          { id: `burst-${i}`, revision: 1 },
+        ),
+      ),
+    );
+    results.forEach((html, i) =>
+      assert.ok(html.includes(`<h1>Document ${i}</h1>`)),
+    );
+  } finally {
+    pool.close();
+  }
+});
+test("shutdown rejects queued renders without launching more children", async () => {
+  const pool = new RenderPool(
+    new URL("./fixtures/render-hang.mjs", import.meta.url),
+    5000,
+  );
+  const jobs = Promise.allSettled(
+    Array.from({ length: 5 }, (_, i) =>
+      pool.run(content, { id: `shutdown-${i}`, revision: 1 }),
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  pool.close();
+  const results = await jobs;
+  assert.ok(results.every((result) => result.status === "rejected"));
 });
