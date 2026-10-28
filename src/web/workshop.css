@@ -123,9 +123,9 @@ textarea::placeholder {
 }
 .artifact-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 40px;
-  row-gap: 44px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 32px;
 }
 .artifact-card {
   min-width: 0;
@@ -145,7 +145,7 @@ textarea::placeholder {
 .artifact-thumbnail {
   display: block;
   aspect-ratio: 16/10;
-  padding: 24px;
+  padding: 16px;
   background: #eeede9;
   overflow: hidden;
 }
@@ -166,11 +166,11 @@ textarea::placeholder {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin-top: 19px;
+  margin-top: 14px;
 }
 .artifact-card-title {
   min-width: 0;
-  font: 400 26px/1.2 var(--serif);
+  font: 400 23px/1.2 var(--serif);
   letter-spacing: -0.015em;
   overflow: hidden;
   white-space: nowrap;
@@ -576,6 +576,7 @@ textarea::placeholder {
     padding: 0 32px 48px;
   }
   .artifact-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 32px 24px;
   }
   .artifact-thumbnail {
