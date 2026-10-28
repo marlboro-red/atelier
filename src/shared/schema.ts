@@ -24,6 +24,7 @@ export const contentSchema = z
   })
   .refine((v) => Object.hasOwn(v.files, v.entry), "Entry must exist in files");
 export const createSchema = z.object({
+  waitForCheck: z.boolean().default(true),
   title: z.string().trim().min(1).max(160),
   description: z.string().max(2000).default(""),
   author: z.string().max(100).default("Agent"),
@@ -31,6 +32,7 @@ export const createSchema = z.object({
   content: contentSchema,
 });
 export const revisionSchema = z.object({
+  waitForCheck: z.boolean().default(true),
   baseRevision: z.number().int().positive(),
   author: z.string().max(100).default("Agent"),
   summary: z.string().trim().min(1).max(1000),

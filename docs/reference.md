@@ -345,7 +345,7 @@ Write requests accept these fields:
 | Export | `revision`, `format` | `snapshot` |
 | Preview check | None | `revision`, `width`, `height`, `screenshot` |
 
-The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. Server-side document rendering runs in separate processes, with at most two jobs, a 30-second deadline, Node's `--max-old-space-size=384` limit per process, and a 64 MiB output limit. An overloaded renderer returns `503`. A render timeout returns `504` on export, or a preview error in the workspace. PDF rendering allows at most two concurrent browser jobs; additional requests return `503`. A job that exceeds 30 seconds is stopped and returns `504`. The API body limit is 32 MiB.
+The export `format` is `html` or `pdf`. Validation errors return `400`, unknown artifacts or revisions return `404`, and revision conflicts return `409`. A missing Chromium installation returns `503` for PDF export. Server-side document rendering runs in separate processes, with at most two jobs, a 30-second deadline, Node's `--max-old-space-size=384` limit per process, and a 64 MiB output limit. An overloaded renderer returns `503`. A render timeout returns `504` on export, or a preview error in the workspace. Preview checks and PDF exports share at most two concurrent browser jobs. Up to 32 additional jobs wait in a bounded queue, with PDF exports taking priority; excess work or a queue wait over 30 seconds returns `503`. Identical in-flight jobs are shared. A job that exceeds 30 seconds is stopped and returns `504`. The API body limit is 32 MiB.
 
 ## Development commands
 
@@ -399,3 +399,5 @@ A connection token fences queue operations, not every native agent tool. A disco
 ### Comment acknowledgement
 
 `GET /api/artifacts/:id/comments` reads threads without changing their state. `POST /api/artifacts/:id/comments/read` with `{}` returns the current threads and records `acknowledgedAt` for unresolved comments. The MCP `list_comments` tool uses this endpoint. Viewer reads do not acknowledge feedback; user replies and reopened threads clear the previous acknowledgement.
+
+Creation and revision requests accept `waitForCheck: false` (HTTP or MCP) to return the saved revision immediately with `preview.status: "pending"`. Checks continue in the background and update thumbnails. The default remains `true`. Use `check_artifact` to obtain a report. Checks use a minimal trusted sandbox viewer; the browser integration suite separately exercises the full workspace. Revision history accepts `before` (exclusive revision number) and `limit` (1–200, default 200).

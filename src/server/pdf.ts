@@ -1,13 +1,20 @@
+import { browserJobs } from "./job-queue.js";
+import { createHash } from "node:crypto";
 import { chromium } from "playwright";
 import { HttpError } from "./store.js";
-let running = 0;
-export async function renderPdf(
-  html: string,
-  deadlineMs = 30000,
-): Promise<Buffer> {
-  if (running >= 2)
-    throw new HttpError(503, "PDF exporter is busy. Try again shortly.");
-  running++;
+
+export function renderPdf(html: string, deadlineMs = 30000): Promise<Buffer> {
+  return browserJobs.run(
+    "pdf:" +
+      createHash("sha256")
+        .update(html)
+        .update(String(deadlineMs))
+        .digest("hex"),
+    () => runPdf(html, deadlineMs),
+    1,
+  );
+}
+async function runPdf(html: string, deadlineMs = 30000): Promise<Buffer> {
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let expired = false;
   const watchdog = setTimeout(() => {
@@ -66,6 +73,5 @@ export async function renderPdf(
   } finally {
     clearTimeout(watchdog);
     await browser?.close().catch(() => {});
-    running--;
   }
 }

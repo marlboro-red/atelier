@@ -833,6 +833,12 @@ program
         title: z.string(),
         description: z.string().optional(),
         author: z.string(),
+        waitForCheck: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Wait for the preview result; false returns a durable save receipt immediately",
+          ),
         feedbackSession: z
           .string()
           .uuid()
@@ -851,6 +857,7 @@ program
           title: args.title,
           description: args.description,
           author: args.author,
+          waitForCheck: args.waitForCheck,
           content: await mcpContent(args),
         });
         return connectCreated(artifact, args.watch, args.feedbackSession);
@@ -864,6 +871,12 @@ program
         baseRevision: z.number().int().positive(),
         summary: z.string(),
         author: z.string(),
+        waitForCheck: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Wait for the preview result; false returns a durable save receipt immediately",
+          ),
         ...contentInput,
         commentIds: z.array(z.string()).optional(),
       },
@@ -873,6 +886,7 @@ program
             baseRevision: args.baseRevision,
             summary: args.summary,
             author: args.author,
+            waitForCheck: args.waitForCheck,
             commentIds: args.commentIds,
             content: await mcpContent(args),
           }),

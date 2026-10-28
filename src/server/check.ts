@@ -1,3 +1,6 @@
+import { browserJobs } from "./job-queue.js";
+import { createHash } from "node:crypto";
+import { workspacePolicy } from "../shared/security.js";
 import { chromium } from "playwright";
 
 export type PreviewCheck = {
@@ -10,7 +13,7 @@ export type PreviewCheck = {
   screenshot?: { mimeType: "image/png"; data: string };
   thumbnail?: string;
 };
-let running = 0;
+
 // Browser checks are bounded; a burst of publications must not launch an
 // unbounded number of Chromium processes or hold publish responses forever.
 export async function checkPreview(
@@ -19,6 +22,37 @@ export async function checkPreview(
   viewport = { width: 1280, height: 900 },
   screenshot = false,
   deadlineMs = 30000,
+  html?: string,
+): Promise<PreviewCheck> {
+  const key =
+    "check:" +
+    createHash("sha256")
+      .update(
+        JSON.stringify([url, revision, viewport, screenshot, deadlineMs, html]),
+      )
+      .digest("hex");
+  try {
+    return await browserJobs.run(key, () =>
+      runCheck(url, revision, viewport, screenshot, deadlineMs, html),
+    );
+  } catch (error) {
+    return {
+      status: "unavailable",
+      revision,
+      viewport,
+      errors: [],
+      warnings: [String(error)],
+      durationMs: 0,
+    };
+  }
+}
+async function runCheck(
+  url: string,
+  revision: number,
+  viewport = { width: 1280, height: 900 },
+  screenshot = false,
+  deadlineMs = 30000,
+  html?: string,
 ): Promise<PreviewCheck> {
   const start = Date.now();
   const errors: string[] = [],
@@ -31,13 +65,6 @@ export async function checkPreview(
     warnings: [...warnings],
     durationMs: Date.now() - start,
   });
-  if (running >= 2) {
-    warnings.push(
-      "Preview checker is busy. Run check_artifact or atelier check to retry.",
-    );
-    return result("unavailable");
-  }
-  running++;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let expired = false;
   const watchdog = setTimeout(() => {
@@ -99,6 +126,19 @@ export async function checkPreview(
       }
       return route.continue();
     });
+    if (html !== undefined) {
+      // The trusted parent retains the same navigation boundary as the workspace,
+      // but does not load React, history, subscriptions, or library metadata.
+      const encoded = JSON.stringify(html).replace(/</g, "\\u003c");
+      await page.route(url, (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/html",
+          headers: { "Content-Security-Policy": workspacePolicy() },
+          body: `<!doctype html><style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0;display:block}</style><iframe sandbox="allow-scripts" title="Artifact"></iframe><script>const frame=document.querySelector('iframe');addEventListener('message',event=>{if(event.source!==frame.contentWindow||!event.data?.atelier)return;const msg=event.data;if(msg.type==='save-data'){window.__atelierSuppressedWrites=(window.__atelierSuppressedWrites||0)+1;frame.contentWindow.postMessage({atelier:true,type:'data-result',requestId:msg.requestId},'*')}});frame.srcdoc=${encoded};</script>`,
+        }),
+      );
+    }
     await page.addInitScript(() => {
       if (window !== top) return;
       const state = { ready: false, errors: [] as string[] };
@@ -147,6 +187,9 @@ export async function checkPreview(
       ))
     )
       add(warnings, "Artifact overflows the viewport horizontally");
+    suppressedWrites += await page.evaluate(
+      () => (window as any).__atelierSuppressedWrites || 0,
+    );
     if (suppressedWrites)
       add(
         warnings,
@@ -183,6 +226,5 @@ export async function checkPreview(
   } finally {
     clearTimeout(watchdog);
     await browser?.close().catch(() => {});
-    running--;
   }
 }

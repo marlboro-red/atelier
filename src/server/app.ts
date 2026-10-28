@@ -89,11 +89,30 @@ export function createApp(
         ],
         durationMs: 0,
       };
+    let html: string;
+    try {
+      html = await renderer.run(store.revision(id, revision).content, {
+        id,
+        revision,
+        data: store.data(id),
+      });
+    } catch (error) {
+      return {
+        status: "failed",
+        revision,
+        viewport,
+        errors: [String(error)],
+        warnings: [],
+        durationMs: 0,
+      };
+    }
     const { thumbnail, ...report } = await checkPreview(
       `http://127.0.0.1:${address.port}/a/${encodeURIComponent(id)}/revisions/${revision}`,
       revision,
       viewport,
       screenshot,
+      30000,
+      html,
     );
     if (
       thumbnail &&
@@ -103,6 +122,17 @@ export function createApp(
     )
       changed(id);
     return report;
+  }
+  const backgroundChecks = new Set<Promise<unknown>>();
+  app.addHook("preClose", async () => {
+    await Promise.allSettled(backgroundChecks);
+  });
+  async function publicationCheck(id: string, revision: number, wait = true) {
+    const job = check(id, revision);
+    if (wait) return job;
+    backgroundChecks.add(job);
+    void job.finally(() => backgroundChecks.delete(job)).catch(() => {});
+    return { status: "pending", revision };
   }
   const changed = (id: string) => events.emit("change", { id });
   const params = (req: any) =>
@@ -115,9 +145,15 @@ export function createApp(
   }));
   app.get("/api/artifacts", async () => store.list());
   app.post("/api/artifacts", async (req, reply) => {
-    const a = store.create(createSchema.parse(req.body));
+    const input = createSchema.parse(req.body);
+    const a = store.create(input);
     changed(a.id);
-    return reply.code(201).send({ ...a, preview: await check(a.id, a.head) });
+    return reply
+      .code(201)
+      .send({
+        ...a,
+        preview: await publicationCheck(a.id, a.head, input.waitForCheck),
+      });
   });
   app.get("/api/artifacts/:id", async (req) => store.get(params(req).id));
   app.get("/api/artifacts/:id/thumbnail", async (req, reply) =>
@@ -183,9 +219,15 @@ export function createApp(
   });
   app.post("/api/artifacts/:id/revisions", async (req, reply) => {
     const id = params(req).id;
-    const r = store.update(id, revisionSchema.parse(req.body));
+    const input = revisionSchema.parse(req.body);
+    const r = store.update(id, input);
     changed(id);
-    return reply.code(201).send({ ...r, preview: await check(id, r.number) });
+    return reply
+      .code(201)
+      .send({
+        ...r,
+        preview: await publicationCheck(id, r.number, input.waitForCheck),
+      });
   });
   app.post("/api/artifacts/:id/restore", async (req) => {
     const id = params(req).id;
