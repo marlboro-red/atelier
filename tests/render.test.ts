@@ -173,3 +173,24 @@ test("plain Markdown stays small and math embeds only WOFF2 fonts", async () => 
   assert.doesNotMatch(math, /format\(["']?(?:woff|truetype)["']?\)/);
   assert.ok(Buffer.byteLength(math) < 500000);
 });
+
+test("math tokens leave inline, fenced, and indented code untouched", async () => {
+  const html = await render(
+    {
+      kind: "markdown",
+      entry: "a.md",
+      files: {
+        "a.md":
+          'Inline `$x$` and ``$$y$$``.\n\n```js\nconst amount = "$z$";\n```\n\n    $indented$\n\nReal $a^2$ and:\n\n$$b^2$$\n\nATELIERMATHTOKEN0END',
+      },
+    },
+    { id: "math-code", revision: 1 },
+  );
+  const article = html.slice(html.indexOf('<article class="document">'));
+  assert.match(article, /<code>\$x\$<\/code>/);
+  assert.match(article, /<code>\$\$y\$\$<\/code>/);
+  assert.match(article, /\$z\$/);
+  assert.match(article, /<pre><code>\$indented\$/);
+  assert.match(article, /ATELIERMATHTOKEN0END/);
+  assert.equal((html.match(/class="katex"/g) ?? []).length, 2);
+});

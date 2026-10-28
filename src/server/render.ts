@@ -327,9 +327,63 @@ export async function compile(content: Content) {
   } else if (content.kind === "markdown") {
     const math: string[] = [];
     const diagrams: string[] = [];
+    const mathMarker = `ATELIERMATH${randomUUID().replaceAll("-", "")}TOKEN`;
+    const mathToken = (raw: string, text: string, display: boolean) => ({
+      type: "atelierMath",
+      raw,
+      text,
+      display,
+    });
     const marker = `ATELIERDIAGRAM${randomUUID().replaceAll("-", "")}TOKEN`;
     const markdownParser = new Marked({
+      extensions: [
+        {
+          name: "atelierBlockMath",
+          level: "block",
+          start: (source) => /^ {0,3}\$\$/m.exec(source)?.index,
+          tokenizer(source) {
+            const match = /^ {0,3}\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(source);
+            if (match) return mathToken(match[0], match[1], true);
+          },
+        },
+        {
+          name: "atelierMath",
+          level: "inline",
+          start: (source) => source.indexOf("$"),
+          tokenizer(source) {
+            const match =
+              /^(?:\$\$([\s\S]+?)\$\$|\$((?:\\.|[^$\\\n])+?)\$(?!\$))/.exec(
+                source,
+              );
+            if (match)
+              return mathToken(
+                match[0],
+                match[1] ?? match[2],
+                match[1] !== undefined,
+              );
+          },
+          renderer(token) {
+            const index =
+              math.push(
+                katex.renderToString(String(token.text), {
+                  displayMode: !!token.display,
+                  throwOnError: false,
+                }),
+              ) - 1;
+            return `${mathMarker}${index}END`;
+          },
+        },
+      ],
       renderer: {
+        image(token) {
+          const file = content.files[token.href.replace(/^\.\//, "")];
+          if (file !== undefined)
+            token.href = file.startsWith("data:")
+              ? file
+              : "data:image/svg+xml;base64," +
+                Buffer.from(file).toString("base64");
+          return false;
+        },
         code(token) {
           if (token.lang?.trim().split(/\s+/)[0] !== "mermaid") return false;
           const index = diagrams.length;
@@ -342,42 +396,7 @@ export async function compile(content: Content) {
         },
       },
     });
-    // Keep math processing out of fenced/indented code, including Mermaid source.
-    const codeBlocks: string[] = [];
-    const codeMarker = `ATELIERCODE${randomUUID().replaceAll("-", "")}TOKEN`;
-    let prose = source;
-    markdownParser.walkTokens(markdownParser.lexer(source), (token) => {
-      if (token.type === "code" && prose.includes(token.raw)) {
-        const index = codeBlocks.push(token.raw) - 1;
-        prose = prose.replace(token.raw, `${codeMarker}${index}END\n`);
-      }
-    });
-    const prepared = prose.replace(
-      /\$\$([\s\S]+?)\$\$|\$([^\n$]+?)\$/g,
-      (_, block, inline) => {
-        const token = `ATELIERMATHTOKEN${math.length}END`;
-        math.push(
-          katex.renderToString(block ?? inline, {
-            displayMode: !!block,
-            throwOnError: false,
-          }),
-        );
-        return token;
-      },
-    );
-    const markdown = prepared.replace(
-      /!\[([^\]]*)\]\(([^)]+)\)/g,
-      (all, alt, path) => {
-        const file = content.files[path.replace(/^\.\//, "")];
-        if (file === undefined) return all;
-        return `![${alt}](${file.startsWith("data:") ? file : "data:image/svg+xml;base64," + Buffer.from(file).toString("base64")})`;
-      },
-    );
-    const restored = markdown.replace(
-      new RegExp(`${codeMarker}(\\d+)END\n`, "g"),
-      (_, index) => codeBlocks[Number(index)],
-    );
-    body = sanitize(await markdownParser.parse(restored), {
+    body = sanitize(await markdownParser.parse(source), {
       allowedTags: sanitize.defaults.allowedTags.concat(["img"]),
       allowedAttributes: {
         ...sanitize.defaults.allowedAttributes,
@@ -385,7 +404,10 @@ export async function compile(content: Content) {
       },
       allowedSchemes: ["data"],
     });
-    body = body.replace(/ATELIERMATHTOKEN(\d+)END/g, (_, n) => math[Number(n)]);
+    body = body.replace(
+      new RegExp(`${mathMarker}(\\d+)END`, "g"),
+      (_, n) => math[Number(n)],
+    );
     body = body.replace(
       new RegExp(`${marker}(\\d+)END`, "g"),
       (_, index) => diagrams[Number(index)],
