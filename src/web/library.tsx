@@ -1,4 +1,3 @@
-import { Ornament } from "./ornament";
 import React from "react";
 import { Search, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import type { Artifact } from "../shared/schema";
@@ -29,32 +28,20 @@ export const Library = React.memo(function Library({
     <main className="library">
       <header className="library-header">
         <div className="brand" aria-label="atelier">
-          atelier<span className="brand-period">.</span>
+          atelier
         </div>
-        <span className="local-label">
-          <span className="local-dot" />
-          Saved on this computer
-        </span>
+        <span className="local-label">Local workspace</span>
       </header>
-      <div className="library-heading">
-        <div>
-          <h1>
-            Artifacts<span>.</span>
-          </h1>
-        </div>
-        <Ornament className="library-ornament" />
-      </div>
       {artifacts.length > 0 || search ? (
         <>
           <div className="library-toolbar">
-            <h2>
-              Collection{" "}
+            <h1>
+              Artifacts{" "}
               <span>
                 {artifacts.length}
-                {hasMoreArtifacts ? "+" : ""}{" "}
-                {artifacts.length === 1 ? "artifact" : "artifacts"}
+                {hasMoreArtifacts ? "+" : ""}
               </span>
-            </h2>
+            </h1>
             <label className="search">
               <Search size={15} />
               <input
@@ -66,7 +53,7 @@ export const Library = React.memo(function Library({
             </label>
           </div>
           <div className="artifact-list">
-            {filtered.map((a, index) => (
+            {filtered.map((a) => (
               <article
                 className="artifact-card"
                 key={a.id}
@@ -101,9 +88,6 @@ export const Library = React.memo(function Library({
                     )}
                   </span>
                   <span className="artifact-card-caption">
-                    <span className="folio-number">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
                     <span className="artifact-card-title">{a.title}</span>
                     <ArrowUpRight className="artifact-open-arrow" size={17} />
                   </span>
@@ -159,9 +143,6 @@ export const Library = React.memo(function Library({
         </>
       ) : (
         <section className="empty-library">
-          <span className="empty-folio" aria-hidden="true">
-            <span>a</span>
-          </span>
           <div className="empty-library-copy">
             <h2>No artifacts yet.</h2>
             <p>Ask your connected agent to create an artifact.</p>

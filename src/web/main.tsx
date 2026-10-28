@@ -633,7 +633,7 @@ function App() {
                   onClick={() => navigate("")}
                 >
                   <span className="toolbar-wordmark" aria-hidden="true">
-                    a.
+                    a
                   </span>
                   <ArrowLeft size={13} />
                 </button>
