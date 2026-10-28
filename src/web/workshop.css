@@ -170,7 +170,9 @@ textarea::placeholder {
 }
 .artifact-card-title {
   min-width: 0;
-  font: 400 23px/1.2 var(--serif);
+  font: 400 23px/1.4 var(--serif);
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
   letter-spacing: -0.015em;
   overflow: hidden;
   white-space: nowrap;
