@@ -35,14 +35,25 @@ const allowed = new Set([
   "katex",
 ]);
 const escape = (s: string) => s.replace(/</g, "\\u003c");
-const css = readFileSync(
-  require.resolve("katex/dist/katex.min.css"),
-  "utf8",
-).replace(/url\(([^)]+)\)/g, (_, url: string) => {
-  const path = url.replace(/["']/g, "");
-  const bytes = readFileSync(require.resolve("katex/dist/" + path));
-  return `url(data:font/woff2;base64,${bytes.toString("base64")})`;
-});
+let mathCss: string | undefined;
+function katexCss() {
+  return (mathCss ??= readFileSync(
+    require.resolve("katex/dist/katex.min.css"),
+    "utf8",
+  )
+    // Modern preview browsers support WOFF2; do not embed duplicate WOFF/TTF fallbacks.
+    .replace(/src:([^;}]+)/g, (declaration, sources: string) => {
+      const woff2 = sources
+        .split(",")
+        .find((source) => source.includes(".woff2"));
+      return woff2 ? "src:" + woff2 : declaration;
+    })
+    .replace(/url\(([^)]+)\)/g, (_, url: string) => {
+      const path = url.replace(/["']/g, "");
+      const bytes = readFileSync(require.resolve("katex/dist/" + path));
+      return `url(data:font/woff2;base64,${bytes.toString("base64")})`;
+    }));
+}
 async function htmlDocument(source: string) {
   type Element = DefaultTreeAdapterMap["element"];
   const document = parse(source, { sourceCodeLocationInfo: true });
@@ -915,7 +926,7 @@ export async function render(
     );
     body = '<article class="document">' + body + "</article>";
     styles =
-      css +
+      (math.length ? katexCss() : "") +
       ".mermaid-diagram{margin:24px 0;overflow:auto}.mermaid-diagram .pele{display:block;max-width:100%;height:auto;margin:auto;--pele-font:system-ui,sans-serif}";
   } else if (content.kind === "svg") {
     body = source;

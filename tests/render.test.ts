@@ -155,3 +155,21 @@ test("literal dynamic imports stay inside the supplied files and quoted entry na
   );
   assert.match(html, /SUPPLIED_ARTIFACT_DATA/);
 });
+
+test("plain Markdown stays small and math embeds only WOFF2 fonts", async () => {
+  const content = {
+    kind: "markdown" as const,
+    entry: "a.md",
+    files: { "a.md": "# Hello" },
+  };
+  const plain = await render(content, { id: "test", revision: 1 });
+  assert.ok(Buffer.byteLength(plain) < 40000);
+  assert.doesNotMatch(plain, /data:font/);
+  const math = await render(
+    { ...content, files: { "a.md": "$x$" } },
+    { id: "test", revision: 1 },
+  );
+  assert.match(math, /data:font\/woff2/);
+  assert.doesNotMatch(math, /format\(["']?(?:woff|truetype)["']?\)/);
+  assert.ok(Buffer.byteLength(math) < 500000);
+});
