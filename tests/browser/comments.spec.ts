@@ -521,3 +521,67 @@ test("acknowledgements and replies update with the event stream unavailable, pre
     page.frameLocator("iframe").getByLabel("Artifact input"),
   ).toHaveValue("Keep my state");
 });
+
+test("scroll redraws reuse resolved anchors and overlay buttons", async ({
+  page,
+}) => {
+  const { render } = await import("../../src/server/render");
+  const html = await render(
+    {
+      kind: "html",
+      entry: "index.html",
+      files: {
+        "index.html":
+          "<p>Unique annotation text</p><div style='height:2000px'></div>",
+      },
+    },
+    { id: "cache", revision: 1 },
+  );
+  await page.setContent(html);
+  await page.evaluate(() => (window as any).__atelierReady);
+  await page.evaluate(() => {
+    const query = document.querySelectorAll.bind(document);
+    (window as any).searches = 0;
+    document.querySelectorAll = ((selector: string) => {
+      if (selector === "body *") (window as any).searches++;
+      return query(selector);
+    }) as typeof document.querySelectorAll;
+    window.postMessage(
+      {
+        atelier: true,
+        type: "annotations",
+        comments: [
+          {
+            id: "test",
+            anchor: { selector: "#missing", quote: "Unique annotation text" },
+          },
+        ],
+      },
+      "*",
+    );
+  });
+  await expect(page.locator("atelier-annotations button")).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).originalPin = document
+      .querySelector("atelier-annotations")!
+      .shadowRoot!.querySelector("button");
+  });
+  for (let i = 0; i < 3; i++)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          window.dispatchEvent(new Event("scroll"));
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+  expect(await page.evaluate(() => (window as any).searches)).toBe(1);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).originalPin ===
+        document
+          .querySelector("atelier-annotations")!
+          .shadowRoot!.querySelector("button"),
+    ),
+  ).toBe(true);
+});

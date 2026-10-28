@@ -163,6 +163,7 @@ function bridge(config: {
       }
     }
     if (msg.type === "annotations" && !config.standalone && !config.freeze) {
+      resolvedAnchors.clear();
       annotations = Array.isArray(msg.comments)
         ? msg.comments.slice(0, 200)
         : [];
@@ -232,6 +233,24 @@ function bridge(config: {
     }
     return null;
   };
+  const resolvedAnchors = new Map<
+    string,
+    { el: Element; range: Range | null } | null
+  >();
+  const groups = new Map<
+    string,
+    { group: HTMLElement; pin: HTMLButtonElement }
+  >();
+  function resolveAnnotation(anchor: any) {
+    const key = JSON.stringify(anchor);
+    const cached = resolvedAnchors.get(key);
+    if (resolvedAnchors.has(key) && (!cached || cached.el.isConnected))
+      return cached;
+    const el = locate(anchor);
+    const result = el ? { el, range: quoteRange(el, anchor) } : null;
+    resolvedAnchors.set(key, result);
+    return result;
+  }
   const drawAnnotations = () => {
     if (config.standalone || config.freeze) return;
     if (!overlay) {
@@ -239,32 +258,68 @@ function bridge(config: {
       overlay.style.cssText =
         "position:fixed;inset:0;pointer-events:none;z-index:2147483646";
       overlayRoot = overlay.attachShadow({ mode: "open" });
+      const style = document.createElement("style");
+      style.textContent =
+        "button{position:fixed;pointer-events:auto;border:1px solid #bd9853;border-radius:50%;width:22px;height:22px;background:#fff4cd;color:#5b4820;font:11px system-ui;cursor:pointer}.mark{position:fixed;background:#efc45c44;box-shadow:0 1px #be943c;pointer-events:none}";
+      overlayRoot.append(style);
       document.body.append(overlay);
     }
-    overlayRoot!.replaceChildren();
-    const style = document.createElement("style");
-    style.textContent =
-      "button{position:fixed;pointer-events:auto;border:1px solid #bd9853;border-radius:50%;width:22px;height:22px;background:#fff4cd;color:#5b4820;font:11px system-ui;cursor:pointer} .mark{position:fixed;background:#efc45c44;box-shadow:0 1px #be943c;pointer-events:none}";
-    overlayRoot!.append(style);
-    const occupied: { x: number; y: number }[] = [];
-    annotations.forEach((comment, index) => {
-      const el = locate(comment.anchor);
-      if (!el) return;
-      const range = quoteRange(el, comment.anchor);
-      const rects = range
-        ? Array.from(range.getClientRects())
-        : [el.getBoundingClientRect()];
-      const visible = rects.filter(
-        (r) => r.bottom > 0 && r.top < innerHeight && r.width > 0,
+    // Finish all layout reads before changing overlay styles or children.
+    const measurements = annotations.flatMap((comment, index) => {
+      const target = resolveAnnotation(comment.anchor);
+      if (!target) return [];
+      const rects = (
+        target.range
+          ? Array.from(target.range.getClientRects())
+          : [target.el.getBoundingClientRect()]
+      ).filter(
+        (r) =>
+          r.bottom > 0 &&
+          r.top < innerHeight &&
+          r.right > 0 &&
+          r.left < innerWidth &&
+          r.width > 0,
       );
-      if (!visible.length) return;
-      for (const r of visible) {
+      return rects.length ? [{ comment, index, rects }] : [];
+    });
+    const visible = new Set(measurements.map(({ comment }) => comment.id));
+    for (const [id, entry] of groups)
+      if (!visible.has(id)) {
+        entry.group.remove();
+        groups.delete(id);
+      }
+    const occupied: { x: number; y: number }[] = [];
+    for (const { comment, index, rects } of measurements) {
+      let entry = groups.get(comment.id);
+      if (!entry) {
+        const group = document.createElement("span"),
+          pin = document.createElement("button");
+        pin.addEventListener("click", (event) => {
+          event.stopPropagation();
+          emit("open-comment", {
+            id: comment.id,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        });
+        group.append(pin);
+        overlayRoot!.append(group);
+        entry = { group, pin };
+        groups.set(comment.id, entry);
+      }
+      const { group, pin } = entry;
+      while (group.children.length - 1 > rects.length)
+        group.lastElementChild!.remove();
+      while (group.children.length - 1 < rects.length) {
         const mark = document.createElement("span");
         mark.className = "mark";
-        mark.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
-        overlayRoot!.append(mark);
+        group.append(mark);
       }
-      const last = visible[visible.length - 1];
+      rects.forEach((r, i) => {
+        (group.children[i + 1] as HTMLElement).style.cssText =
+          `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
+      });
+      const last = rects[rects.length - 1];
       const x = Math.max(0, Math.min(last.right + 5, innerWidth - 24));
       let y = Math.max(0, Math.min(last.top, innerHeight - 24));
       while (
@@ -272,17 +327,11 @@ function bridge(config: {
       )
         y += 24;
       occupied.push({ x, y });
-      const pin = document.createElement("button");
       pin.textContent = String(index + 1);
       pin.setAttribute("aria-label", "Open comment " + (index + 1));
       pin.style.left = x + "px";
       pin.style.top = y + "px";
-      pin.addEventListener("click", (e) => {
-        e.stopPropagation();
-        emit("open-comment", { id: comment.id, x: e.clientX, y: e.clientY });
-      });
-      overlayRoot!.append(pin);
-    });
+    }
   };
   function scheduleAnnotations() {
     if (scheduled || config.standalone || config.freeze) return;
@@ -481,9 +530,9 @@ function bridge(config: {
           )
             return;
           for (const comment of annotations) {
-            const el = locate(comment.anchor);
-            if (!el) continue;
-            const range = quoteRange(el, comment.anchor);
+            const target = resolveAnnotation(comment.anchor);
+            if (!target) continue;
+            const { el, range } = target;
             const rects = range
               ? Array.from(range.getClientRects())
               : [el.getBoundingClientRect()];
@@ -525,7 +574,18 @@ function bridge(config: {
       scheduleAnnotations();
       drawInspector();
     });
-    const observer = new MutationObserver(scheduleAnnotations);
+    const observer = new MutationObserver((records) => {
+      const changed = records.some(
+        (record) =>
+          record.type === "characterData" ||
+          [...record.addedNodes, ...record.removedNodes].some(
+            (node) => node !== overlay && node !== inspector,
+          ),
+      );
+      if (!changed) return;
+      resolvedAnchors.clear();
+      scheduleAnnotations();
+    });
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
