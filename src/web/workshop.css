@@ -87,6 +87,7 @@ textarea::placeholder {
   text-transform: uppercase;
 }
 .brand {
+  grid-column: 2;
   display: block;
   font: italic 500 66px/0.9 var(--serif);
   letter-spacing: -0.055em;

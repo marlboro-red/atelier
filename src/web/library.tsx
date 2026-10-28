@@ -28,7 +28,6 @@ export const Library = React.memo(function Library({
   return (
     <main className="library">
       <header className="library-header">
-        <span className="library-imprint">A personal workshop</span>
         <div className="brand" aria-label="atelier">
           atelier<span className="brand-period">.</span>
         </div>
@@ -39,15 +38,9 @@ export const Library = React.memo(function Library({
       </header>
       <div className="library-heading">
         <div>
-          <span className="collection-kicker">
-            Pages, studies & experiments
-          </span>
           <h1>
-            Collected work<span>.</span>
+            Artifacts<span>.</span>
           </h1>
-          <p>
-            A place to return to your ideas, and give them a little more care.
-          </p>
         </div>
         <Ornament className="library-ornament" />
       </div>
@@ -55,18 +48,18 @@ export const Library = React.memo(function Library({
         <>
           <div className="library-toolbar">
             <h2>
-              The collection{" "}
+              Collection{" "}
               <span>
                 {artifacts.length}
                 {hasMoreArtifacts ? "+" : ""}{" "}
-                {artifacts.length === 1 ? "piece" : "pieces"}
+                {artifacts.length === 1 ? "artifact" : "artifacts"}
               </span>
             </h2>
             <label className="search">
               <Search size={15} />
               <input
                 aria-label="Search artifacts"
-                placeholder="Find something…"
+                placeholder="Search artifacts…"
                 value={search}
                 onChange={(e) => onSearch(e.target.value)}
               />
@@ -96,10 +89,10 @@ export const Library = React.memo(function Library({
                         <span className="folio-monogram">a</span>
                         <span className="folio-format">
                           {a.kind === "markdown"
-                            ? "A written piece"
+                            ? "Markdown"
                             : a.kind === "svg"
-                              ? "A visual study"
-                              : "An interactive page"}
+                              ? "SVG"
+                              : "Web page"}
                         </span>
                         <span className="preview-unavailable">
                           Preview unavailable
@@ -117,10 +110,10 @@ export const Library = React.memo(function Library({
                   <span className="artifact-card-description">
                     {a.description ||
                       (a.kind === "markdown"
-                        ? "Notes & writing"
+                        ? "Markdown"
                         : a.kind === "svg"
-                          ? "A visual study"
-                          : "An interactive page")}
+                          ? "SVG"
+                          : "Web page")}
                   </span>
                 </button>
                 <div className="artifact-card-footer">
@@ -156,7 +149,7 @@ export const Library = React.memo(function Library({
             ))}
             {hasMoreArtifacts && (
               <button className="load-more" onClick={onLoadMore}>
-                More from the collection <span aria-hidden="true">↓</span>
+                Load more <span aria-hidden="true">↓</span>
               </button>
             )}
             {!filtered.length && (
@@ -170,22 +163,11 @@ export const Library = React.memo(function Library({
             <span>a</span>
           </span>
           <div className="empty-library-copy">
-            <span className="collection-kicker">An open beginning</span>
-            <h2>Your first piece belongs here.</h2>
-            <p>
-              Ask your connected agent to make a page in atelier.
-              <br />
-              It will find a home in this collection.
-            </p>
+            <h2>No artifacts yet.</h2>
+            <p>Ask your connected agent to create an artifact.</p>
           </div>
         </section>
       )}
-      <footer className="library-footer">
-        <span>
-          atelier <i>— a space for making</i>
-        </span>
-        <span>Made with attention. Kept close.</span>
-      </footer>
     </main>
   );
 });
