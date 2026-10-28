@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Search, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import type { Artifact } from "../shared/schema";
 type Props = {
@@ -8,7 +8,7 @@ type Props = {
   onSearch: (value: string) => void;
   onOpen: (id: string) => void;
   onManage: (action: "rename" | "delete", artifact: Artifact) => void;
-  onLoadMore: () => void;
+  onLoadMore: () => Promise<boolean>;
 };
 export const Library = React.memo(function Library({
   artifacts,
@@ -24,6 +24,42 @@ export const Library = React.memo(function Library({
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  // Bound the DOM independently of how much metadata has been fetched.
+  const pageSize = 50;
+  const [requestedPage, setPage] = useState(0);
+  const [loadingPage, setLoadingPage] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const focusPage = useRef(false);
+  const activeSearch = useRef(search);
+  activeSearch.current = search;
+  const page = Math.min(
+    requestedPage,
+    Math.max(0, Math.ceil(filtered.length / pageSize) - 1),
+  );
+  useEffect(() => {
+    setPage(0);
+  }, [search]);
+  useLayoutEffect(() => {
+    if (!focusPage.current) return;
+    focusPage.current = false;
+    heading.current?.focus({ preventScroll: true });
+    heading.current?.scrollIntoView({ block: "start" });
+  }, [page]);
+  const changePage = async (next: number) => {
+    if (loadingPage) return;
+    if (next * pageSize >= filtered.length) {
+      setLoadingPage(true);
+      try {
+        if (!(await onLoadMore())) return;
+      } finally {
+        setLoadingPage(false);
+      }
+    }
+    if (activeSearch.current !== search) return;
+    focusPage.current = true;
+    setPage(next);
+  };
+  const visible = filtered.slice(page * pageSize, (page + 1) * pageSize);
   return (
     <main className="library">
       <header className="library-header">
@@ -35,7 +71,7 @@ export const Library = React.memo(function Library({
       {artifacts.length > 0 || search ? (
         <>
           <div className="library-toolbar">
-            <h1>
+            <h1 ref={heading} tabIndex={-1}>
               Artifacts{" "}
               <span>
                 {artifacts.length}
@@ -53,7 +89,7 @@ export const Library = React.memo(function Library({
             </label>
           </div>
           <div className="artifact-list">
-            {filtered.map((a) => (
+            {visible.map((a) => (
               <article
                 className="artifact-card"
                 key={a.id}
@@ -131,15 +167,39 @@ export const Library = React.memo(function Library({
                 </div>
               </article>
             ))}
-            {hasMoreArtifacts && (
-              <button className="load-more" onClick={onLoadMore}>
-                Load more <span aria-hidden="true">↓</span>
-              </button>
-            )}
             {!filtered.length && (
               <p className="no-results">No artifacts match your search.</p>
             )}
           </div>
+          {(filtered.length > pageSize || hasMoreArtifacts) && (
+            <nav
+              className="collection-pagination"
+              aria-label="Collection pages"
+              aria-busy={loadingPage}
+            >
+              <button
+                disabled={page === 0 || loadingPage}
+                onClick={() => void changePage(page - 1)}
+              >
+                Previous
+              </button>
+              <span aria-live="polite">
+                {page * pageSize + 1}–{page * pageSize + visible.length} of{" "}
+                {filtered.length}
+                {hasMoreArtifacts ? "+" : ""}
+              </span>
+              <button
+                disabled={
+                  loadingPage ||
+                  ((page + 1) * pageSize >= filtered.length &&
+                    !hasMoreArtifacts)
+                }
+                onClick={() => void changePage(page + 1)}
+              >
+                {loadingPage ? "Loading…" : "Next"}
+              </button>
+            </nav>
+          )}
         </>
       ) : (
         <section className="empty-library">

@@ -116,6 +116,8 @@ function App() {
     ),
     [sourceFile, setSourceFile] = useState(""),
     [compare, setCompare] = useState<Revision | null>(null);
+  const collectionContext = useRef("");
+  collectionContext.current = JSON.stringify([locationState.id, search]);
   const [management, setManagement] = useState<{
     action: "rename" | "delete";
     artifact: Artifact;
@@ -1386,12 +1388,15 @@ function App() {
           onSearch={setSearch}
           onOpen={navigate}
           onManage={manage}
-          onLoadMore={() =>
-            run(async () => {
+          onLoadMore={async () => {
+            let loaded = false;
+            await run(async () => {
+              const context = collectionContext.current;
               const last = artifacts.at(-1)!;
               const rows = await api<Artifact[]>(
                 `/artifacts?cursor=${encodeURIComponent(last.updatedAt + "|" + last.id)}&search=${encodeURIComponent(search)}`,
               );
+              if (context !== collectionContext.current) return;
               setArtifacts((old) => [
                 ...old,
                 ...rows.filter(
@@ -1399,8 +1404,10 @@ function App() {
                 ),
               ]);
               setHasMoreArtifacts(rows.length === 200);
-            })
-          }
+              loaded = rows.length > 0;
+            });
+            return loaded;
+          }}
         />
       )}
       {management && (

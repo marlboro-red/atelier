@@ -75,9 +75,25 @@ export function useThumbnails(
       },
       { rootMargin: "200px" },
     );
-    document
-      .querySelectorAll(".artifact-card")
-      .forEach((card) => observer.observe(card));
+    const cards = (node: Node, visit: (card: Element) => void) => {
+      if (!(node instanceof Element)) return;
+      if (node.matches(".artifact-card")) visit(node);
+      node.querySelectorAll(".artifact-card").forEach(visit);
+    };
+    const list = document.querySelector(".artifact-list");
+    if (list) cards(list, (card) => observer.observe(card));
+    // Paging replaces cards without changing the fetched artifact metadata.
+    const changes = new MutationObserver((records) => {
+      for (const record of records) {
+        record.removedNodes.forEach((node) =>
+          cards(node, (card) => observer.unobserve(card)),
+        );
+        record.addedNodes.forEach((node) =>
+          cards(node, (card) => observer.observe(card)),
+        );
+      }
+    });
+    if (list) changes.observe(list, { childList: true });
     const visible = () => {
       if (document.visibilityState === "visible")
         setThumbnailRetry((value) => value + 1);
@@ -86,6 +102,7 @@ export function useThumbnails(
     return () => {
       cancelled = true;
       observer.disconnect();
+      changes.disconnect();
       for (const timer of timers) clearTimeout(timer);
       document.removeEventListener("visibilitychange", visible);
     };

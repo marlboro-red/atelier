@@ -252,12 +252,26 @@ textarea::placeholder {
 .preview-unavailable {
   font-size: 10px;
 }
-.load-more {
-  grid-column: 1/-1;
-  justify-self: center;
-  padding: 12px 24px;
+.collection-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.collection-pagination button {
+  min-width: 80px;
+  padding: 10px 14px;
   border: 1px solid var(--line);
-  font-size: 12px;
+  border-radius: 0;
+  color: var(--ink);
+}
+.collection-pagination button:disabled {
+  opacity: 0.4;
 }
 .no-results {
   grid-column: 1/-1;
