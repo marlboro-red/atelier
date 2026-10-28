@@ -630,3 +630,31 @@ test("comment events reuse immutable source and unrelated events do not reload t
   expect(reads.some((url) => url.includes("/revisions"))).toBe(false);
   expect(reads.includes("/api/artifacts")).toBe(false);
 });
+
+test("local HTML scripts preserve execution order and CSS resolves nested assets", async ({
+  page,
+}) => {
+  const html = await render(
+    {
+      kind: "html",
+      entry: "index.html",
+      files: {
+        "index.html": `<script src="./dep.js"></script><script>window.observed=window.dep;window.literal='src="image.svg"';</script><link rel="stylesheet" href="styles/main.css"><div id="image">Asset</div>`,
+        "dep.js": "window.dep=42;",
+        "styles/main.css": '#image{background-image:url("../image.svg")}',
+        "image.svg":
+          '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>',
+      },
+    },
+    { id: "order", revision: 1, standalone: true, freeze: true },
+  );
+  await page.setContent(html);
+  expect(await page.evaluate(() => (window as any).observed)).toBe(42);
+  expect(await page.evaluate(() => (window as any).literal)).toBe(
+    'src="image.svg"',
+  );
+  await expect(page.locator("#image")).toHaveCSS(
+    "background-image",
+    /data:image\/svg\+xml;base64/,
+  );
+});

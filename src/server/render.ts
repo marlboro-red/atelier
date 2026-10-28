@@ -53,7 +53,7 @@ function katexCss() {
       return `url(data:font/woff2;base64,${bytes.toString("base64")})`;
     }));
 }
-async function htmlDocument(source: string) {
+async function htmlDocument(source: string, content: Content) {
   type Element = DefaultTreeAdapterMap["element"];
   const document = parse(source, { sourceCodeLocationInfo: true });
   const html = document.childNodes.find(
@@ -75,26 +75,90 @@ async function htmlDocument(source: string) {
     body.childNodes = parseFragment(body, source, {}).childNodes;
     for (const child of body.childNodes) child.parentNode = body;
   }
+  const localPath = (url: string, base = content.entry) => {
+    if (/^(?:[a-z]+:|\/|#)/i.test(url)) return undefined;
+    const path = posix.normalize(posix.join(posix.dirname(base), url));
+    return Object.hasOwn(content.files, path) ? path : undefined;
+  };
+  const asset = (
+    url: string,
+    base = content.entry,
+    seen = new Set<string>(),
+  ): string => {
+    const file = localPath(url, base);
+    if (!file) return url;
+    if (seen.has(file)) throw new Error(`Circular CSS asset: ${file}`);
+    const value = content.files[file];
+    if (value.startsWith("data:")) return value;
+    const css = file.endsWith(".css");
+    const next = new Set([...seen, file]);
+    const source = css ? rewriteCss(value, file, next) : value;
+    return `data:${css ? "text/css" : file.endsWith(".svg") ? "image/svg+xml" : "text/plain"};base64,${Buffer.from(source).toString("base64")}`;
+  };
+  const rewriteCss = (
+    css: string,
+    base: string,
+    seen = new Set<string>(),
+  ): string =>
+    css
+      .replace(
+        /url\(\s*(["']?)([^)'"\s]+)\1\s*\)/g,
+        (_, _quote, url) => `url("${asset(url, base, seen)}")`,
+      )
+      .replace(
+        /(@import\s+)(["'])([^"']+)\2/g,
+        (_, prefix, _quote, url) => `${prefix}"${asset(url, base, seen)}"`,
+      );
   let scriptCount = 0;
-  async function embedScripts(
+  async function embedAssets(
     node: DefaultTreeAdapterMap["node"],
   ): Promise<void> {
-    if ("tagName" in node && node.tagName === "script") {
-      const src = node.attrs.find((attr) => attr.name === "src");
-      if (src && !src.value.startsWith("data:")) {
-        if (++scriptCount > 16)
-          throw new Error("An artifact may declare at most 16 CDN scripts");
-        src.value = await loadCdnScript(
-          src.value,
-          node.attrs.find((attr) => attr.name === "integrity")?.value,
-        );
-        node.attrs = node.attrs.filter((attr) => attr.name !== "integrity");
+    if ("tagName" in node) {
+      if (node.tagName === "script") {
+        const src = node.attrs.find((attr) => attr.name === "src");
+        if (src && !src.value.startsWith("data:")) {
+          const file = localPath(src.value);
+          if (file) {
+            const out = await bundle(content, file);
+            src.value = `data:text/javascript;base64,${Buffer.from(out.js).toString("base64")}`;
+            if (out.css) {
+              const style = parseFragment(
+                `<style>${out.css.replace(/<\/style/gi, "<\\/style")}</style>`,
+              ).childNodes[0];
+              if ("parentNode" in style) style.parentNode = head;
+              head.childNodes.push(style);
+            }
+          } else {
+            if (++scriptCount > 16)
+              throw new Error("An artifact may declare at most 16 CDN scripts");
+            src.value = await loadCdnScript(
+              src.value,
+              node.attrs.find((attr) => attr.name === "integrity")?.value,
+            );
+          }
+          node.attrs = node.attrs.filter((attr) => attr.name !== "integrity");
+        }
+      } else {
+        for (const attr of node.attrs) {
+          if (["src", "href"].includes(attr.name))
+            attr.value = asset(attr.value);
+          if (attr.name === "style")
+            attr.value = rewriteCss(attr.value, content.entry);
+        }
+        if (node.tagName === "style")
+          for (const child of node.childNodes) {
+            if (child.nodeName === "#text")
+              (child as DefaultTreeAdapterMap["textNode"]).value = rewriteCss(
+                (child as DefaultTreeAdapterMap["textNode"]).value,
+                content.entry,
+              );
+          }
       }
     }
     if ("childNodes" in node)
-      for (const child of node.childNodes) await embedScripts(child);
+      for (const child of [...node.childNodes]) await embedAssets(child);
   }
-  await embedScripts(html);
+  await embedAssets(html);
   // atelier owns encoding, viewport, and security policy. Keep authored styles,
   // scripts, metadata, and attributes on the single document shell.
   head.childNodes = head.childNodes.filter((node) => {
@@ -324,36 +388,10 @@ export async function compile(content: Content) {
     body = source;
   } else {
     body = source;
-    for (const match of [
-      ...body.matchAll(
-        /<script\b[^>]*src=["']([^"']+)["'][^>]*>\s*<\/script>/gi,
-      ),
-    ]) {
-      const file = match[1].replace(/^\.\//, "");
-      if (Object.hasOwn(content.files, file)) {
-        const out = await bundle(content, file);
-        body = body.replace(match[0], "");
-        script += "\n" + out.js;
-        styles += out.css;
-      }
-    }
-    body = body.replace(/(src|href)=["']([^"']+)["']/g, (all, attr, path) => {
-      const file = content.files[path.replace(/^\.\//, "")];
-      if (file === undefined) return all;
-      const mime = path.endsWith(".css")
-        ? "text/css"
-        : path.endsWith(".svg")
-          ? "image/svg+xml"
-          : "text/plain";
-      const url = file.startsWith("data:")
-        ? file
-        : `data:${mime};base64,${Buffer.from(file).toString("base64")}`;
-      return `${attr}="${url}"`;
-    });
   }
   const document =
     content.kind === "html"
-      ? await htmlDocument(body)
+      ? await htmlDocument(body, content)
       : {
           htmlOpen: "<html>",
           headOpen: "<head>",
