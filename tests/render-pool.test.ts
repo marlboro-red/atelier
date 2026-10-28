@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { RenderPool } from "../src/server/render-pool.js";
 const content = {
   kind: "html" as const,
@@ -74,5 +74,37 @@ test("identical renders share one job and later views reuse the result", async (
     );
   } finally {
     pool.close();
+  }
+});
+
+test("compilation survives state changes, export variants, and pool restarts", async () => {
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = mkdtempSync(join(tmpdir(), "atelier-compilation-"));
+  let pool = new RenderPool(undefined, undefined, undefined, directory);
+  try {
+    await pool.run(content, options);
+    // An unavailable compiler must not prevent assembly of already compiled content.
+    (pool as any).spawn = () => {
+      throw new Error("Unexpected compilation");
+    };
+    const changed = await pool.run(content, { ...options, data: { count: 7 } });
+    assert.match(changed, /"count":7/);
+    assert.match(
+      await pool.run(content, { ...options, standalone: true }),
+      /srcdoc=/,
+    );
+    pool.close();
+    pool = new RenderPool(undefined, undefined, undefined, directory);
+    (pool as any).spawn = () => {
+      throw new Error("Unexpected compilation after restart");
+    };
+    assert.match(
+      await pool.run(content, { id: "copy", revision: 2 }),
+      /"id":"copy"/,
+    );
+  } finally {
+    pool.close();
+    rmSync(directory, { recursive: true, force: true });
   }
 });

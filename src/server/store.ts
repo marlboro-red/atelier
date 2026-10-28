@@ -20,9 +20,9 @@ export class HttpError extends Error {
 }
 export class Store {
   db: DatabaseSync;
-  constructor(dir: string) {
-    mkdirSync(dir, { recursive: true });
-    this.db = new DatabaseSync(join(dir, "atelier.sqlite"));
+  constructor(readonly directory: string) {
+    mkdirSync(directory, { recursive: true });
+    this.db = new DatabaseSync(join(directory, "atelier.sqlite"));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
  CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS revisions (artifact_id TEXT NOT NULL REFERENCES artifacts(id), number INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(artifact_id,number));

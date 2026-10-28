@@ -20,7 +20,12 @@ export function createApp(
   agents = localAgents,
 ) {
   const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 });
-  const renderer = new RenderPool();
+  const renderer = new RenderPool(
+    undefined,
+    undefined,
+    undefined,
+    store.directory,
+  );
   const feedback = new Feedback(store);
   const events = new EventEmitter();
   events.setMaxListeners(100);

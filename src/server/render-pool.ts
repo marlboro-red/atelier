@@ -1,10 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, realpath } from "node:fs/promises";
+import { mkdtemp, rm, realpath, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { render } from "./render.js";
+import { assemble, type CompiledDocument } from "./render-document.js";
+import { DiskCache } from "./disk-cache.js";
 import { HttpError } from "./store.js";
 
 type RenderInput = Parameters<typeof render>;
@@ -18,29 +20,89 @@ export class RenderPool {
   private cache = new Map<string, string>();
   private cachedBytes = 0;
   private pending = new Map<string, Promise<string>>();
+  private disk?: DiskCache;
+  private fingerprint?: Promise<string>;
   constructor(
     private worker = new URL("./render-worker.mjs", import.meta.url),
     private deadlineMs = 30000,
     private cacheBytes = 128 * 1024 * 1024,
-  ) {}
+    cacheDirectory?: string,
+  ) {
+    if (cacheDirectory)
+      this.disk = new DiskCache(
+        join(cacheDirectory, "cache", "compiled"),
+        cacheBytes,
+      );
+  }
+  private version() {
+    return (this.fingerprint ??= Promise.all(
+      [
+        "./render.ts",
+        "./render-document.ts",
+        "./imports.ts",
+        "./cdn.ts",
+        "../shared/security.ts",
+        "../../package-lock.json",
+      ].map((path) => readFile(new URL(path, import.meta.url))),
+    ).then((files) => {
+      const hash = createHash("sha256");
+      for (const file of files) hash.update(file);
+      return hash.digest("hex");
+    }));
+  }
   async run(...input: RenderInput): Promise<string> {
     if (this.closed) throw new HttpError(503, "Renderer is stopping");
+    const compiled =
+      this.worker.href === new URL("./render-worker.mjs", import.meta.url).href;
     const key = createHash("sha256")
-      .update(JSON.stringify(input))
+      .update(compiled ? await this.version() : "test-worker")
+      .update(JSON.stringify(compiled ? input[0] : input))
       .digest("hex");
+    const finish = (value: string) => {
+      if (this.closed) throw new HttpError(503, "Renderer is stopping");
+      const html = compiled
+        ? assemble(JSON.parse(value) as CompiledDocument, input[1])
+        : value;
+      if (Buffer.byteLength(html) > 64 * 1024 * 1024)
+        throw new HttpError(422, "Rendered document exceeds 64 MiB");
+      return html;
+    };
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       this.cache.delete(key);
       this.cache.set(key, cached);
-      return cached;
+      return finish(cached);
     }
-    const pending = this.pending.get(key);
-    if (pending) return pending;
-    const job = this.spawn(input).finally(() => this.pending.delete(key));
+    const existing = this.pending.get(key);
+    if (existing) return finish(await existing);
+    const job = (async () => {
+      const disk = await this.disk?.get(key);
+      if (disk !== undefined) {
+        try {
+          if (compiled) {
+            const value = JSON.parse(disk);
+            if (
+              typeof value.script !== "string" ||
+              typeof value.styles !== "string" ||
+              !["htmlOpen", "headOpen", "bodyOpen", "head", "body"].every(
+                (key) => typeof value.document?.[key] === "string",
+              )
+            )
+              throw new Error("Invalid compilation cache");
+          }
+          this.remember(key, disk);
+          return disk;
+        } catch {
+          /* Rebuild damaged cache entries. */
+        }
+      }
+      const result = await this.spawn(input);
+      this.remember(key, result);
+      await this.disk?.put(key, result);
+      return result;
+    })().finally(() => this.pending.delete(key));
     this.pending.set(key, job);
-    const html = await job;
-    this.remember(key, html);
-    return html;
+    return finish(await job);
   }
   private remember(key: string, html: string) {
     const size = Buffer.byteLength(html);

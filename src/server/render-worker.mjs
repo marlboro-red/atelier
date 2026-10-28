@@ -2,8 +2,8 @@ import "tsx/esm";
 // Only the parent supplies input. Artifact code is compiled, never evaluated here.
 process.once("message", async (input) => {
   try {
-    const { render } = await import("./render.ts");
-    const html = await render(...input);
+    const { compile } = await import("./render.ts");
+    const html = JSON.stringify(await compile(input[0]));
     if (Buffer.byteLength(html) > 64 * 1024 * 1024)
       throw new Error("Rendered document exceeds 64 MiB");
     process.send({ html });
