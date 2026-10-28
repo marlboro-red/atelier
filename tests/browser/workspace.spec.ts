@@ -595,3 +595,38 @@ test("explicit full-document head scripts keep their authored execution order", 
     "true",
   );
 });
+
+test("comment events reuse immutable source and unrelated events do not reload the viewer", async ({
+  page,
+  request,
+}) => {
+  const content: Content = {
+    kind: "html",
+    entry: "index.html",
+    files: { "index.html": "<h1>Efficient viewer</h1>" },
+  };
+  const a = await create(request, "Target", content);
+  const b = await create(request, "Other", content);
+  await page.goto(`/a/${a.id}`);
+  await expect(page.frameLocator("iframe").getByRole("heading")).toHaveText(
+    "Efficient viewer",
+  );
+  const reads: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "GET" && r.url().includes("/api/artifacts"))
+      reads.push(new URL(r.url()).pathname);
+  });
+  await request.patch(`/api/artifacts/${b.id}`, {
+    data: { title: "Unrelated rename" },
+  });
+  await page.waitForTimeout(200);
+  expect(reads.filter((url) => !url.endsWith("/feedback"))).toEqual([]);
+  await request.post(`/api/artifacts/${a.id}/comments`, {
+    data: { revision: 1, body: "New comment" },
+  });
+  await expect(
+    page.getByRole("button", { name: "Comments (1)", exact: true }),
+  ).toBeVisible();
+  expect(reads.some((url) => url.includes("/revisions"))).toBe(false);
+  expect(reads.includes("/api/artifacts")).toBe(false);
+});

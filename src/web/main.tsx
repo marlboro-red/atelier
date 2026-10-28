@@ -89,6 +89,7 @@ function App() {
       setSessionsLoading(false);
     }
   }
+  const streamConnected = useRef(false);
   const connectionCommand = `atelier watch ${artifact?.id ?? "ARTIFACT_ID"} --agent ${connectionProvider} --cwd .`;
   useEffect(() => {
     if (!locationState.id) {
@@ -98,16 +99,21 @@ function App() {
     let cancelled = false;
     let updating = false;
     const update = async () => {
-      if (updating) return;
+      if (updating || document.visibilityState !== "visible") return;
       updating = true;
       try {
         const [status, threads] = await Promise.all([
           api(`/artifacts/${locationState.id}/feedback`),
-          api<Comment[]>(`/artifacts/${locationState.id}/comments`),
+          streamConnected.current
+            ? Promise.resolve(null)
+            : api<Comment[]>(`/artifacts/${locationState.id}/comments`),
         ]);
         if (!cancelled) {
           setFeedback(status);
-          setComments(threads);
+          if (threads)
+            setComments((old) =>
+              JSON.stringify(old) === JSON.stringify(threads) ? old : threads,
+            );
         }
       } catch {
         // Preserve the last known thread state during a transient outage.
@@ -288,43 +294,86 @@ function App() {
     setPanel(null);
     setReviewOpen(false);
   }
+  const refreshController = useRef<AbortController | null>(null);
+  const loadedRevision = useRef<Revision | null>(null);
+  const loadedHistory = useRef<{
+    id: string;
+    head: number;
+    rows: Revision[];
+  } | null>(null);
   async function refresh() {
-    const token = ++loading.current;
-    const list = await api<Artifact[]>("/artifacts");
-    if (token !== loading.current) return;
-    setArtifacts(list);
-    if (!locationState.id) {
-      setArtifact(null);
-      setRevision(null);
-      return;
+    refreshController.current?.abort();
+    const controller = new AbortController();
+    refreshController.current = controller;
+    const read = <T,>(path: string) =>
+      api<T>(path, { signal: controller.signal });
+    try {
+      const token = ++loading.current;
+      if (!locationState.id) {
+        const list = await read<Artifact[]>("/artifacts");
+        if (token !== loading.current) return;
+        setArtifacts(list);
+        setArtifact(null);
+        setRevision(null);
+        return;
+      }
+      const a = await read<Artifact>(`/artifacts/${locationState.id}`);
+      const number = locationState.revision ?? a.head;
+      const [r, h, c] = await Promise.all([
+        loadedRevision.current?.artifactId === a.id &&
+        loadedRevision.current.number === number
+          ? loadedRevision.current
+          : read<Revision>(`/artifacts/${a.id}/revisions/${number}`),
+        loadedHistory.current?.id === a.id &&
+        loadedHistory.current.head === a.head
+          ? loadedHistory.current.rows
+          : read<Revision[]>(`/artifacts/${a.id}/revisions`),
+        read<Comment[]>(`/artifacts/${a.id}/comments`),
+      ]);
+      if (token !== loading.current) return;
+      loadedRevision.current = r;
+      loadedHistory.current = { id: a.id, head: a.head, rows: h };
+      setArtifact(a);
+      setRevision(r);
+      setHistory(h);
+      setComments((old) =>
+        JSON.stringify(old) === JSON.stringify(c) ? old : c,
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (error instanceof Error && error.message === "Artifact not found") {
+        navigate("");
+        return;
+      }
+      throw error;
     }
-    if (!list.some((item) => item.id === locationState.id)) {
-      closeReview();
-      navigate("");
-      return;
-    }
-    const a = await api<Artifact>(`/artifacts/${locationState.id}`);
-    const [r, h, c] = await Promise.all([
-      api<Revision>(
-        `/artifacts/${a.id}/revisions/${locationState.revision ?? a.head}`,
-      ),
-      api<Revision[]>(`/artifacts/${a.id}/revisions`),
-      api<Comment[]>(`/artifacts/${a.id}/comments`),
-    ]);
-    if (token !== loading.current) return;
-    setArtifact(a);
-    setRevision(r);
-    setHistory(h);
-    setComments(c);
   }
   useEffect(() => {
-    run(refresh);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void run(refresh);
+      }, 50);
+    };
+    schedule();
     const events = new EventSource("/api/events");
-    events.onmessage = () => run(refresh);
-    // Events sent while disconnected are not replayed by the server.
-    events.onopen = () => run(refresh);
+    events.onmessage = (event) => {
+      const change = JSON.parse(event.data);
+      if (!locationState.id || change.id === locationState.id) schedule();
+    };
+    events.onerror = () => {
+      streamConnected.current = false;
+    };
+    events.onopen = () => {
+      streamConnected.current = true;
+      schedule();
+    };
     return () => {
+      clearTimeout(timer);
+      streamConnected.current = false;
       events.close();
+      refreshController.current?.abort();
       loading.current++;
     };
   }, [locationState.id, locationState.revision]);
