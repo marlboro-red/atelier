@@ -164,3 +164,40 @@ test("rename preserves identity and history; delete atomically removes owned dat
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("legacy histories migrate once and metadata reads do not touch source blobs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atelier-history-"));
+  let store = new Store(dir);
+  try {
+    const a = store.create({
+      title: "History",
+      description: "",
+      author: "Test",
+      summary: "Initial",
+      content,
+    });
+    store.update(a.id, {
+      baseRevision: 1,
+      author: "Test",
+      summary: "Second",
+      content,
+      commentIds: [],
+    });
+    store.db.exec("DROP TABLE revision_metadata");
+    store.close();
+    store = new Store(dir);
+    assert.deepEqual(
+      store.revisions(a.id).map((r) => r.number),
+      [2, 1],
+    );
+    assert.equal(store.revisions(a.id, 2, 1)[0].number, 1);
+    assert.equal("content" in store.revisions(a.id)[0], false);
+    store.db
+      .prepare("UPDATE revisions SET data=? WHERE artifact_id=?")
+      .run("unreadable source", a.id);
+    assert.equal(store.revisions(a.id)[0].summary, "Second");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

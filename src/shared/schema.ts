@@ -85,3 +85,7 @@ export interface Comment {
   acknowledgedAt?: string;
   replies: { body: string; author: string; createdAt: string }[];
 }
+
+export type RevisionMetadata = Omit<Revision, "content"> & {
+  kind: Content["kind"];
+};

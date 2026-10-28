@@ -140,11 +140,15 @@ export function createApp(
     changed(id);
     return { deleted: true, id };
   });
-  app.get("/api/artifacts/:id/revisions", async (req) =>
-    store
-      .revisions(params(req).id)
-      .map(({ content, ...r }) => ({ ...r, kind: content.kind })),
-  );
+  app.get("/api/artifacts/:id/revisions", async (req) => {
+    const { before, limit } = z
+      .object({
+        before: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(200).default(200),
+      })
+      .parse(req.query);
+    return store.revisions(params(req).id, before, limit);
+  });
   app.get("/api/artifacts/:id/revisions/:n", async (req) =>
     store.revision(
       params(req).id,

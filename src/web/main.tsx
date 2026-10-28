@@ -19,7 +19,13 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { anchorSchema } from "../shared/schema";
-import type { Artifact, Revision, Comment, Anchor } from "../shared/schema";
+import type {
+  Artifact,
+  Revision,
+  RevisionMetadata,
+  Comment,
+  Anchor,
+} from "../shared/schema";
 import "./style.css";
 async function api<T = any>(
   path: string,
@@ -50,7 +56,7 @@ function App() {
     [locationState, setLocationState] = useState(route),
     [artifact, setArtifact] = useState<Artifact | null>(null),
     [revision, setRevision] = useState<Revision | null>(null),
-    [history, setHistory] = useState<Revision[]>([]),
+    [history, setHistory] = useState<RevisionMetadata[]>([]),
     [comments, setComments] = useState<Comment[]>([]);
   const [composerPosition, setComposerPosition] = useState<{
     x: number;
@@ -299,7 +305,7 @@ function App() {
   const loadedHistory = useRef<{
     id: string;
     head: number;
-    rows: Revision[];
+    rows: RevisionMetadata[];
   } | null>(null);
   async function refresh() {
     refreshController.current?.abort();
@@ -327,7 +333,7 @@ function App() {
         loadedHistory.current?.id === a.id &&
         loadedHistory.current.head === a.head
           ? loadedHistory.current.rows
-          : read<Revision[]>(`/artifacts/${a.id}/revisions`),
+          : read<RevisionMetadata[]>(`/artifacts/${a.id}/revisions`),
         read<Comment[]>(`/artifacts/${a.id}/comments`),
       ]);
       if (token !== loading.current) return;
@@ -1397,6 +1403,28 @@ function App() {
                             </button>
                           </div>
                         ))}
+                        {history.length > 0 && history.at(-1)!.number > 1 && (
+                          <button
+                            onClick={() =>
+                              run(async () => {
+                                const rows = await api<RevisionMetadata[]>(
+                                  `/artifacts/${artifact.id}/revisions?before=${history.at(-1)!.number}`,
+                                );
+                                setHistory((old) => [
+                                  ...old,
+                                  ...rows.filter(
+                                    (row) =>
+                                      !old.some(
+                                        (item) => item.number === row.number,
+                                      ),
+                                  ),
+                                ]);
+                              })
+                            }
+                          >
+                            Load older revisions
+                          </button>
+                        )}
                       </div>
                     </>
                   ) : panel === "source" ? (

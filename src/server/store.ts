@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type {
   Artifact,
   Revision,
+  RevisionMetadata,
   Comment,
   Content,
   Anchor,
@@ -28,6 +29,22 @@ export class Store {
  CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id), data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS thumbnails (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), revision INTEGER NOT NULL, version TEXT NOT NULL, image BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS app_data (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), data TEXT NOT NULL);`);
+    // Migrate once, rather than parsing source blobs during every history read.
+    if (
+      !this.db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE name='revision_metadata'",
+        )
+        .get()
+    ) {
+      this.transaction(() => {
+        this.db.exec(`CREATE TABLE revision_metadata (
+          artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+          number INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(artifact_id,number));
+          INSERT INTO revision_metadata SELECT artifact_id,number,
+            json_set(json_remove(data,'$.content'),'$.kind',json_extract(data,'$.content.kind')) FROM revisions;`);
+      });
+    }
   }
   list(): Artifact[] {
     return this.db
@@ -48,13 +65,17 @@ export class Store {
     if (!r) throw new HttpError(404, "Artifact not found");
     return JSON.parse(r.data as string);
   }
-  revisions(id: string): Revision[] {
+  revisions(
+    id: string,
+    before = Number.MAX_SAFE_INTEGER,
+    limit = 200,
+  ): RevisionMetadata[] {
     this.get(id);
     return this.db
       .prepare(
-        "SELECT data FROM revisions WHERE artifact_id=? ORDER BY number DESC",
+        "SELECT data FROM revision_metadata WHERE artifact_id=? AND number<? ORDER BY number DESC LIMIT ?",
       )
-      .all(id)
+      .all(id, before, limit)
       .map((r) => JSON.parse(r.data as string));
   }
   revision(id: string, n?: number): Revision {
@@ -137,6 +158,14 @@ export class Store {
     });
   }
   private insertRevision(r: Revision) {
+    const { content, ...metadata } = r;
+    this.db
+      .prepare("INSERT INTO revision_metadata VALUES (?,?,?)")
+      .run(
+        r.artifactId,
+        r.number,
+        JSON.stringify({ ...metadata, kind: content.kind }),
+      );
     this.db
       .prepare("INSERT INTO revisions VALUES (?,?,?)")
       .run(r.artifactId, r.number, JSON.stringify(r));
