@@ -37,6 +37,14 @@ function bridge(config: {
   let state = config.snapshot?.state ?? null;
   let data = config.data;
   const pending = new Map();
+  const readiness: Promise<unknown>[] = [];
+  let resolveReady!: () => void, rejectReady!: (error: unknown) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  w.__atelierReady = ready;
+  void ready.catch(() => {});
   let seq = 0;
   const emit = (type: string, payload: any = {}) =>
     parent.postMessage({ atelier: true, type, ...payload }, "*");
@@ -48,6 +56,11 @@ function bridge(config: {
     });
   };
   w.atelier = {
+    waitUntil: (task: Promise<unknown>) => {
+      const promise = Promise.resolve(task);
+      void promise.catch(() => {});
+      readiness.push(promise);
+    },
     getData: async () =>
       config.standalone && parent !== window
         ? exportRequest("export-get-data")
@@ -132,8 +145,16 @@ function bridge(config: {
       drawInspector();
       document.documentElement.style.cursor = selecting ? "crosshair" : "";
     }
-    if (msg.type === "snapshot")
-      emit("snapshot", { requestId: msg.requestId, snapshot: snapshot() });
+    if (msg.type === "snapshot") {
+      void ready
+        .then(async () => {
+          await settle();
+          emit("snapshot", { requestId: msg.requestId, snapshot: snapshot() });
+        })
+        .catch((error) =>
+          emit("snapshot", { requestId: msg.requestId, error: String(error) }),
+        );
+    }
     if (msg.type === "data-result") {
       const p = pending.get(msg.requestId);
       if (p) {
@@ -538,7 +559,74 @@ function bridge(config: {
   addEventListener("unhandledrejection", (e) =>
     emit("runtime-error", { message: String(e.reason) }),
   );
-  const restore = () => {
+  const frame = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  async function settle() {
+    const work = async () => {
+      await frame();
+      await frame();
+      while (readiness.length) await Promise.all(readiness.splice(0));
+      await document.fonts.ready;
+      await Promise.all(
+        Array.from(document.images, (image) => image.decode().catch(() => {})),
+      );
+      await frame();
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        work(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Artifact readiness timed out. Register asynchronous rendering with atelier.waitUntil().",
+                ),
+              ),
+            10000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async function waitForInputs() {
+    const inputs = config.snapshot?.inputs ?? [];
+    if (inputs.every((item: any) => document.querySelector(item.selector)))
+      return;
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        observer.disconnect();
+        clearTimeout(timer);
+      };
+      const observer = new MutationObserver(() => {
+        if (
+          inputs.every((item: any) => document.querySelector(item.selector))
+        ) {
+          cleanup();
+          resolve();
+        }
+      });
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(
+          new Error(
+            "Saved controls did not appear; export state could not be restored",
+          ),
+        );
+      }, 5000);
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+      });
+    });
+  }
+  const restore = async () => {
+    await settle();
+    await waitForInputs();
     for (const item of config.snapshot?.inputs ?? []) {
       const el: any = document.querySelector(item.selector);
       if (el) {
@@ -569,9 +657,22 @@ function bridge(config: {
         }
       }
     }
+    await settle();
+    if (config.freeze) {
+      const style = document.createElement("style");
+      style.textContent =
+        "*,*::before,*::after{animation-play-state:paused!important;transition:none!important}";
+      document.head.append(style);
+    }
+    resolveReady();
     emit("ready");
   };
-  addEventListener("load", () => setTimeout(restore, 150));
+  addEventListener("load", () => {
+    void restore().catch((error) => {
+      rejectReady(error);
+      emit("runtime-error", { message: String(error) });
+    });
+  });
 }
 // Trusted export viewer: keep storage outside the opaque-origin artifact.
 function exportDataBridge(config: { id: string; data: unknown }) {

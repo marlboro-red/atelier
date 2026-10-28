@@ -254,7 +254,30 @@ function App() {
     };
   }, [artifacts, locationState.id, search]);
   const iframe = useRef<HTMLIFrameElement>(null);
-  const snapshotResolvers = useRef(new Map<string, (value: unknown) => void>());
+  const snapshotResolvers = useRef(
+    new Map<
+      string,
+      {
+        resolve: (value: unknown) => void;
+        reject: (error: Error) => void;
+        timer: ReturnType<typeof setTimeout>;
+      }
+    >(),
+  );
+  useEffect(
+    () => () => {
+      for (const request of snapshotResolvers.current.values()) {
+        clearTimeout(request.timer);
+        request.reject(
+          new Error(
+            "Artifact changed during export. Retry from the current revision.",
+          ),
+        );
+      }
+      snapshotResolvers.current.clear();
+    },
+    [locationState.id, locationState.revision],
+  );
   const requestCounter = useRef(0);
   const loading = useRef(0);
   const notify = (message: string) => {
@@ -494,8 +517,14 @@ function App() {
           [...new Set([...old, msg.message.slice(0, 1500)])].slice(0, 20),
         );
       if (msg.type === "snapshot") {
-        snapshotResolvers.current.get(msg.requestId)?.(msg.snapshot);
-        snapshotResolvers.current.delete(msg.requestId);
+        const request = snapshotResolvers.current.get(msg.requestId);
+        if (request) {
+          clearTimeout(request.timer);
+          msg.error
+            ? request.reject(new Error(String(msg.error)))
+            : request.resolve(msg.snapshot);
+          snapshotResolvers.current.delete(msg.requestId);
+        }
       }
       if (msg.type === "anchor-missing")
         notify(
@@ -617,16 +646,20 @@ function App() {
     setBusy(true);
     await run(async () => {
       const requestId = String(++requestCounter.current);
-      const snapshot = await new Promise((resolve) => {
-        snapshotResolvers.current.set(requestId, resolve);
+      const snapshot = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          snapshotResolvers.current.delete(requestId);
+          reject(
+            new Error(
+              "The artifact did not finish capturing its state. Wait for it to finish loading, then retry export.",
+            ),
+          );
+        }, 15000);
+        snapshotResolvers.current.set(requestId, { resolve, reject, timer });
         iframe.current?.contentWindow?.postMessage(
           { atelier: true, type: "snapshot", requestId },
           "*",
         );
-        setTimeout(() => {
-          snapshotResolvers.current.delete(requestId);
-          resolve(null);
-        }, 1200);
       });
       const response = await fetch(`/api/artifacts/${artifact.id}/export`, {
         ...post({ revision: revision.number, format, snapshot }),

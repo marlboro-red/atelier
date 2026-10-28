@@ -59,8 +59,13 @@ async function runPdf(html: string, deadlineMs = 30000): Promise<Buffer> {
       }
     });
     await page.setContent(html, { waitUntil: "load", timeout: 15000 });
-    await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(500);
+    await page.evaluate(async () => {
+      await (window as any).__atelierReady;
+      await document.fonts.ready;
+      await Promise.all(
+        Array.from(document.images, (image) => image.decode().catch(() => {})),
+      );
+    });
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,

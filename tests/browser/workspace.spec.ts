@@ -658,3 +658,29 @@ test("local HTML scripts preserve execution order and CSS resolves nested assets
     /data:image\/svg\+xml;base64/,
   );
 });
+
+test("export readiness restores controls created asynchronously", async ({
+  page,
+}) => {
+  const html = await render(
+    {
+      kind: "html",
+      entry: "index.html",
+      files: {
+        "index.html": `<script>atelier.waitUntil(new Promise(resolve => setTimeout(() => {document.body.insertAdjacentHTML('beforeend', '<input id="late" value="default">');resolve()}, 700)));</script>`,
+      },
+    },
+    {
+      id: "late",
+      revision: 1,
+      standalone: true,
+      freeze: true,
+      snapshot: {
+        inputs: [{ selector: "#late", value: "saved", checked: false }],
+      },
+    },
+  );
+  await page.setContent(html);
+  await page.evaluate(() => (window as any).__atelierReady);
+  await expect(page.locator("#late")).toHaveValue("saved");
+});
