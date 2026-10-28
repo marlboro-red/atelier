@@ -136,3 +136,38 @@ test("home cards show real previews and offer rename and delete on narrow screen
     (await request.get(`/api/artifacts/${artifact.id}/thumbnail`)).status(),
   ).toBe(404);
 });
+
+test("a visible thumbnail retries an unavailable check instead of remaining blank", async ({
+  page,
+}) => {
+  const id = "00000000-0000-0000-0000-000000000012";
+  await page.route("**/api/artifacts", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id,
+          title: "Retry preview",
+          description: "",
+          kind: "html",
+          head: 1,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        },
+      ],
+    }),
+  );
+  let attempts = 0;
+  await page.route(`**/api/artifacts/${id}/check`, (route) => {
+    attempts++;
+    return route.fulfill({
+      json: {
+        status: attempts === 1 ? "unavailable" : "passed",
+        thumbnailAvailable: attempts > 1,
+      },
+    });
+  });
+  await page.goto("/");
+  await expect.poll(() => attempts).toBe(2);
+  await page.waitForTimeout(1500);
+  expect(attempts).toBe(2);
+});

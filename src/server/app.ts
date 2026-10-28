@@ -114,14 +114,14 @@ export function createApp(
       30000,
       html,
     );
-    if (
+    const thumbnailAvailable = !!(
       thumbnail &&
       viewport.width === 1280 &&
       viewport.height === 900 &&
       store.saveThumbnail(id, revision, Buffer.from(thumbnail, "base64"))
-    )
-      changed(id);
-    return report;
+    );
+    if (thumbnailAvailable) changed(id);
+    return { ...report, thumbnailAvailable };
   }
   const backgroundChecks = new Set<Promise<unknown>>();
   app.addHook("preClose", async () => {
@@ -148,12 +148,10 @@ export function createApp(
     const input = createSchema.parse(req.body);
     const a = store.create(input);
     changed(a.id);
-    return reply
-      .code(201)
-      .send({
-        ...a,
-        preview: await publicationCheck(a.id, a.head, input.waitForCheck),
-      });
+    return reply.code(201).send({
+      ...a,
+      preview: await publicationCheck(a.id, a.head, input.waitForCheck),
+    });
   });
   app.get("/api/artifacts/:id", async (req) => store.get(params(req).id));
   app.get("/api/artifacts/:id/thumbnail", async (req, reply) =>
@@ -222,12 +220,10 @@ export function createApp(
     const input = revisionSchema.parse(req.body);
     const r = store.update(id, input);
     changed(id);
-    return reply
-      .code(201)
-      .send({
-        ...r,
-        preview: await publicationCheck(id, r.number, input.waitForCheck),
-      });
+    return reply.code(201).send({
+      ...r,
+      preview: await publicationCheck(id, r.number, input.waitForCheck),
+    });
   });
   app.post("/api/artifacts/:id/restore", async (req) => {
     const id = params(req).id;

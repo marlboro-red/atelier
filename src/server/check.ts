@@ -12,6 +12,7 @@ export type PreviewCheck = {
   durationMs: number;
   screenshot?: { mimeType: "image/png"; data: string };
   thumbnail?: string;
+  thumbnailAvailable?: boolean;
 };
 
 // Browser checks are bounded; a burst of publications must not launch an
