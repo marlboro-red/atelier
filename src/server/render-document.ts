@@ -1,7 +1,7 @@
-import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { artifactPolicy } from "../shared/security.js";
 const escape = (s: string) => s.replace(/</g, "\\u003c");
 export type CompiledDocument = {
+  title: string;
   document: {
     htmlOpen: string;
     headOpen: string;
@@ -359,7 +359,13 @@ function bridge(config: {
     }
   };
   function scheduleAnnotations() {
-    if (scheduled || config.standalone || config.freeze) return;
+    if (
+      scheduled ||
+      config.standalone ||
+      config.freeze ||
+      (!annotations.length && !groups.size)
+    )
+      return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
@@ -600,21 +606,31 @@ function bridge(config: {
       drawInspector();
     });
     const observer = new MutationObserver((records) => {
-      const changed = records.some(
+      const relevant = records.filter(
         (record) =>
-          record.type === "characterData" ||
-          [...record.addedNodes, ...record.removedNodes].some(
-            (node) => node !== overlay && node !== inspector,
-          ),
+          record.target !== overlay &&
+          record.target !== inspector &&
+          (record.type !== "childList" ||
+            [...record.addedNodes, ...record.removedNodes].some(
+              (node) => node !== overlay && node !== inspector,
+            )),
       );
-      if (!changed) return;
-      resolvedAnchors.clear();
+      if (!relevant.length) return;
+      if (
+        relevant.some(
+          (record) =>
+            record.type !== "attributes" ||
+            ["id", "data-atelier-id"].includes(record.attributeName ?? ""),
+        )
+      )
+        resolvedAnchors.clear();
       scheduleAnnotations();
     });
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       characterData: true,
+      attributes: true,
     });
     document.fonts?.ready.then(scheduleAnnotations);
   }
@@ -805,7 +821,7 @@ function exportDataBridge(config: { id: string; data: unknown }) {
   });
 }
 export function assemble(
-  { document, script, styles }: CompiledDocument,
+  { document, script, styles, title }: CompiledDocument,
   options: RenderOptions,
 ): string {
   const config = {
@@ -828,26 +844,8 @@ export function assemble(
       .replaceAll('"', "&quot;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
-  function findTitle(
-    node: DefaultTreeAdapterMap["node"],
-  ): DefaultTreeAdapterMap["element"] | undefined {
-    if ("tagName" in node && node.tagName === "title") return node;
-    if ("childNodes" in node)
-      for (const child of node.childNodes) {
-        const title = findTitle(child);
-        if (title) return title;
-      }
-  }
-  const title = findTitle(parse(rendered));
-  function textContent(node: DefaultTreeAdapterMap["node"]): string {
-    if ("value" in node) return node.value;
-    return "childNodes" in node
-      ? node.childNodes.map(textContent).join("")
-      : "";
-  }
-  // SVG titles can contain elements. Never promote serialized artifact markup
-  // into the trusted viewer's HTML title (an HTML RCDATA context).
-  const titleText = attribute(title ? textContent(title) : "atelier artifact");
+  // The compiler extracted text; escape it again for the trusted HTML title context.
+  const titleText = attribute(title);
   const storage = `const __name=(fn)=>fn;(${exportDataBridge.toString()})(${escape(JSON.stringify({ id: options.id, data: options.data ?? null }))});`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${artifactPolicy}"><title>${titleText}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style><script>${storage.replace(/<\/script/gi, "<\\/script")}</script></head><body><iframe title="Artifact" sandbox="allow-scripts" srcdoc="${attribute(rendered)}"></iframe></body></html>`;
 }

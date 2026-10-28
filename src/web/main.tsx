@@ -1,7 +1,13 @@
+import { SourcePanel } from "./source-panel";
+import { useResources } from "./use-resources";
+import { artifactMessageSchema } from "../shared/bridge-messages";
+import { Library } from "./library";
+import { useFeedback } from "./use-feedback";
+import { useThumbnails } from "./use-thumbnails";
+import { api, post } from "./api";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Search,
   ArrowUpRight,
   Code2,
   MessageSquare,
@@ -25,24 +31,9 @@ import type {
   RevisionMetadata,
   Comment,
   Anchor,
+  FeedbackStatus,
 } from "../shared/schema";
 import "./style.css";
-async function api<T = any>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const response = await fetch("/api" + path, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
-  });
-  if (!response.ok)
-    throw new Error((await response.json()).error ?? response.statusText);
-  return response.json();
-}
-const post = (body: unknown) => ({
-  method: "POST",
-  body: JSON.stringify(body),
-});
 const route = () => {
   const match = location.pathname.match(/^\/a\/([^/]+)(?:\/revisions\/(\d+))?/);
   return {
@@ -67,13 +58,7 @@ function App() {
     x: number;
     y: number;
   } | null>(null);
-  const [feedback, setFeedback] = useState<{
-    provider: string | null;
-    connected: boolean;
-    state: string;
-    queued: number;
-    uncertain: number;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackStatus | null>(null);
   const [sending, setSending] = useState(false);
   const [connectionProvider, setConnectionProvider] = useState("codex");
   const [openSessions, setOpenSessions] = useState<
@@ -98,48 +83,7 @@ function App() {
   }
   const streamConnected = useRef(false);
   const connectionCommand = `atelier watch ${artifact?.id ?? "ARTIFACT_ID"} --agent ${connectionProvider} --cwd .`;
-  useEffect(() => {
-    if (!locationState.id) {
-      setFeedback(null);
-      return;
-    }
-    let cancelled = false;
-    let updating = false;
-    const update = async () => {
-      if (updating || document.visibilityState !== "visible") return;
-      updating = true;
-      try {
-        const [status, threads] = await Promise.all([
-          api(`/artifacts/${locationState.id}/feedback`),
-          streamConnected.current
-            ? Promise.resolve(null)
-            : api<Comment[]>(`/artifacts/${locationState.id}/comments`),
-        ]);
-        if (!cancelled) {
-          setFeedback(status);
-          if (threads)
-            setComments((old) =>
-              JSON.stringify(old) === JSON.stringify(threads) ? old : threads,
-            );
-        }
-      } catch {
-        // Preserve the last known thread state during a transient outage.
-      } finally {
-        updating = false;
-      }
-    };
-    const visible = () => {
-      if (document.visibilityState === "visible") void update();
-    };
-    document.addEventListener("visibilitychange", visible);
-    void update();
-    const timer = setInterval(update, 3000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", visible);
-    };
-  }, [locationState.id]);
+  useFeedback(locationState.id, streamConnected, setFeedback, setComments);
   function popupPosition(x: number, y: number) {
     return {
       x: Math.max(8, Math.min(x, innerWidth - 348)),
@@ -217,90 +161,7 @@ function App() {
       setManaging(false);
     }
   }
-  const thumbnailAttempts = useRef(
-    new Map<string, { attempts: number; retryAt: number; done: boolean }>(),
-  );
-  const thumbnailPending = useRef(new Set<string>());
-  const thumbnailQueue = useRef(Promise.resolve());
-  const [thumbnailRetry, setThumbnailRetry] = useState(0);
-  useEffect(() => {
-    if (locationState.id) return;
-    let cancelled = false;
-    const timers = new Set<ReturnType<typeof setTimeout>>();
-    const retry = (delay: number) => {
-      const timer = setTimeout(() => {
-        timers.delete(timer);
-        if (!cancelled) setThumbnailRetry((value) => value + 1);
-      }, delay);
-      timers.add(timer);
-    };
-    const items = new Map(artifacts.map((item) => [item.id, item]));
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting || document.visibilityState !== "visible")
-            continue;
-          const item = items.get(
-            (entry.target as HTMLElement).dataset.artifactId!,
-          );
-          if (!item || item.thumbnailVersion) continue;
-          const key = `${item.id}:${item.head}`;
-          const state = thumbnailAttempts.current.get(key) ?? {
-            attempts: 0,
-            retryAt: 0,
-            done: false,
-          };
-          if (
-            state.done ||
-            state.attempts >= 5 ||
-            thumbnailPending.current.has(key)
-          )
-            continue;
-          if (state.retryAt > Date.now()) {
-            retry(state.retryAt - Date.now());
-            continue;
-          }
-          observer.unobserve(entry.target);
-          thumbnailPending.current.add(key);
-          thumbnailQueue.current = thumbnailQueue.current.then(async () => {
-            try {
-              if (cancelled || document.visibilityState !== "visible") return;
-              state.attempts++;
-              thumbnailAttempts.current.set(key, state);
-              const result = await api<{ thumbnailAvailable?: boolean }>(
-                `/artifacts/${item.id}/check`,
-                post({ revision: item.head }),
-              );
-              state.done = result.thumbnailAvailable === true;
-            } catch {
-              /* Retry transient checker and transport failures. */
-            } finally {
-              thumbnailPending.current.delete(key);
-              state.retryAt =
-                Date.now() +
-                Math.min(30000, 1000 * 2 ** Math.max(0, state.attempts - 1));
-              setThumbnailRetry((value) => value + 1);
-            }
-          });
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    document
-      .querySelectorAll(".artifact-card")
-      .forEach((card) => observer.observe(card));
-    const visible = () => {
-      if (document.visibilityState === "visible")
-        setThumbnailRetry((value) => value + 1);
-    };
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-      for (const timer of timers) clearTimeout(timer);
-      document.removeEventListener("visibilitychange", visible);
-    };
-  }, [artifacts, locationState.id, search, thumbnailRetry]);
+  useThumbnails(artifacts, locationState.id, search);
   const iframe = useRef<HTMLIFrameElement>(null);
   const snapshotResolvers = useRef(
     new Map<
@@ -327,7 +188,6 @@ function App() {
     [locationState.id, locationState.revision],
   );
   const requestCounter = useRef(0);
-  const loading = useRef(0);
   const notify = (message: string) => {
     setNotice(message);
     setTimeout(() => setNotice(""), 3500);
@@ -371,92 +231,20 @@ function App() {
     setPanel(null);
     setReviewOpen(false);
   }
-  const refreshController = useRef<AbortController | null>(null);
-  const loadedRevision = useRef<Revision | null>(null);
-  const loadedHistory = useRef<{
-    id: string;
-    head: number;
-    rows: RevisionMetadata[];
-  } | null>(null);
-  async function refresh() {
-    refreshController.current?.abort();
-    const controller = new AbortController();
-    refreshController.current = controller;
-    const read = <T,>(path: string) =>
-      api<T>(path, { signal: controller.signal });
-    try {
-      const token = ++loading.current;
-      if (!locationState.id) {
-        const list = await read<Artifact[]>(
-          `/artifacts?search=${encodeURIComponent(search)}`,
-        );
-        setHasMoreArtifacts(list.length === 200);
-        if (token !== loading.current) return;
-        setArtifacts(list);
-        setArtifact(null);
-        setRevision(null);
-        return;
-      }
-      const a = await read<Artifact>(`/artifacts/${locationState.id}`);
-      const number = locationState.revision ?? a.head;
-      const [r, h, c] = await Promise.all([
-        loadedRevision.current?.artifactId === a.id &&
-        loadedRevision.current.number === number
-          ? loadedRevision.current
-          : read<Revision>(`/artifacts/${a.id}/revisions/${number}`),
-        loadedHistory.current?.id === a.id &&
-        loadedHistory.current.head === a.head
-          ? loadedHistory.current.rows
-          : read<RevisionMetadata[]>(`/artifacts/${a.id}/revisions`),
-        read<Comment[]>(`/artifacts/${a.id}/comments`),
-      ]);
-      if (token !== loading.current) return;
-      loadedRevision.current = r;
-      loadedHistory.current = { id: a.id, head: a.head, rows: h };
-      setArtifact(a);
-      setRevision(r);
-      setHistory(h);
-      setComments((old) =>
-        JSON.stringify(old) === JSON.stringify(c) ? old : c,
-      );
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      if (error instanceof Error && error.message === "Artifact not found") {
-        navigate("");
-        return;
-      }
-      throw error;
-    }
-  }
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const schedule = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        void run(refresh);
-      }, 50);
-    };
-    schedule();
-    const events = new EventSource("/api/events");
-    events.onmessage = (event) => {
-      const change = JSON.parse(event.data);
-      if (!locationState.id || change.id === locationState.id) schedule();
-    };
-    events.onerror = () => {
-      streamConnected.current = false;
-    };
-    events.onopen = () => {
-      streamConnected.current = true;
-      schedule();
-    };
-    return () => {
-      clearTimeout(timer);
-      streamConnected.current = false;
-      events.close();
-      refreshController.current?.abort();
-      loading.current++;
-    };
-  }, [locationState.id, locationState.revision, search]);
+  const refresh = useResources({
+    locationState,
+    search,
+    setArtifacts,
+    setHasMoreArtifacts,
+    setArtifact,
+    setRevision,
+    setHistory,
+    setComments,
+    setFeedback,
+    streamConnected,
+    onMissing: () => navigate(""),
+    onError: setError,
+  });
   useEffect(() => {
     const pop = () => setLocationState(route());
     const key = (event: KeyboardEvent) => {
@@ -518,7 +306,9 @@ function App() {
         !event.data?.atelier
       )
         return;
-      const msg = event.data;
+      const parsed = artifactMessageSchema.safeParse(event.data);
+      if (!parsed.success) return;
+      const msg = parsed.data;
       if (msg.type === "selection-cancel") {
         setSelecting(false);
         return;
@@ -531,8 +321,8 @@ function App() {
         setPanel(null);
         setComposerPosition(
           popupPosition(
-            Number.isFinite(msg.x) ? msg.x : 24,
-            Number.isFinite(msg.y) ? msg.y + 44 : 80,
+            msg.x !== undefined ? msg.x : 24,
+            msg.y !== undefined ? msg.y + 44 : 80,
           ),
         );
         setReviewOpen(false);
@@ -541,11 +331,7 @@ function App() {
       }
       if (msg.type === "selection-candidate") {
         const candidate = anchorSchema.safeParse(msg.anchor);
-        if (
-          !candidate.success ||
-          !Number.isFinite(msg.x) ||
-          !Number.isFinite(msg.y)
-        ) {
+        if (!candidate.success || msg.x === undefined || msg.y === undefined) {
           setSelectionCandidate(null);
         } else
           setSelectionCandidate({
@@ -560,7 +346,7 @@ function App() {
       ) {
         setActiveComment(msg.id);
         openPanel("comments");
-        if (Number.isFinite(msg.x) && Number.isFinite(msg.y))
+        if (msg.x !== undefined && msg.y !== undefined)
           setThreadPosition(popupPosition(msg.x, msg.y + 44));
       }
       if (msg.type === "runtime-error" && typeof msg.message === "string")
@@ -736,11 +522,6 @@ function App() {
     });
     setBusy(false);
   }
-  const filtered = artifacts.filter((a) =>
-    (a.title + " " + a.description)
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
   const showingArtifact = !!locationState.id;
   const composer = (
     <div className="composer">
@@ -1523,58 +1304,20 @@ function App() {
                       </div>
                     </>
                   ) : panel === "source" ? (
-                    <>
-                      <p className="panel-description">
-                        Written by {revision.author} · revision{" "}
-                        {revision.number}. Ask your agent for changes.
-                      </p>
-                      <div className="file-tabs">
-                        {Object.keys(revision.content.files).map((file) => (
-                          <button
-                            className={file === sourceFile ? "selected" : ""}
-                            key={file}
-                            onClick={() => setSourceFile(file)}
-                          >
-                            {file}
-                          </button>
-                        ))}
-                        <button
-                          title="Copy file"
-                          onClick={() =>
-                            run(async () => {
-                              await navigator.clipboard.writeText(
-                                revision.content.files[sourceFile],
-                              );
-                              notify("Source copied");
-                            })
-                          }
-                        >
-                          <Copy size={14} />
-                        </button>
-                      </div>
-                      {compare ? (
-                        <div className="comparison">
-                          <div>
-                            <label>Revision {compare.number}</label>
-                            <pre>
-                              {compare.content.files[sourceFile] ??
-                                "File not present in this revision"}
-                            </pre>
-                          </div>
-                          <div>
-                            <label>Revision {revision.number}</label>
-                            <pre>{revision.content.files[sourceFile]}</pre>
-                          </div>
-                        </div>
-                      ) : (
-                        <pre
-                          className="source-code"
-                          aria-label="Read-only source"
-                        >
-                          {revision.content.files[sourceFile]}
-                        </pre>
-                      )}
-                    </>
+                    <SourcePanel
+                      revision={revision}
+                      compare={compare}
+                      sourceFile={sourceFile}
+                      onSelect={setSourceFile}
+                      onCopy={() =>
+                        run(async () => {
+                          await navigator.clipboard.writeText(
+                            revision.content.files[sourceFile],
+                          );
+                          notify("Source copied");
+                        })
+                      }
+                    />
                   ) : (
                     <div className="share-options">
                       <p>
@@ -1631,122 +1374,29 @@ function App() {
           )}
         </>
       ) : (
-        <main className="library">
-          <header className="library-header">
-            <div className="brand">
-              <span className="brand-mark">a</span>atelier
-              <span className="brand-dot">.</span>
-            </div>
-            <span className="local-label">
-              <i /> Local to this computer
-            </span>
-          </header>
-          <div className="library-heading">
-            <h1>Artifacts</h1>
-            <p>View, comment on, and export artifacts created by your agent.</p>
-          </div>
-          {artifacts.length > 0 || search ? (
-            <>
-              <div className="library-toolbar">
-                <h2>
-                  Your artifacts <span>{artifacts.length}</span>
-                </h2>
-                <label className="search">
-                  <Search size={15} />
-                  <input
-                    aria-label="Search artifacts"
-                    placeholder="Find an artifact…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </label>
-              </div>
-              <div className="artifact-list">
-                {filtered.map((a) => (
-                  <article
-                    className="artifact-card"
-                    key={a.id}
-                    data-artifact-id={a.id}
-                  >
-                    <button
-                      className="artifact-card-open"
-                      aria-label={`Open ${a.title}`}
-                      onClick={() => navigate(a.id)}
-                    >
-                      <span className="artifact-thumbnail">
-                        {a.thumbnailVersion ? (
-                          <img
-                            src={`/api/artifacts/${a.id}/thumbnail?v=${encodeURIComponent(a.thumbnailVersion)}`}
-                            alt={`Preview of ${a.title}`}
-                            loading="lazy"
-                          />
-                        ) : (
-                          <span className="thumbnail-placeholder">
-                            <Code2 size={28} />
-                            <span>Preview unavailable</span>
-                          </span>
-                        )}
-                      </span>
-                      <span className="artifact-card-title">{a.title}</span>
-                      <span className="artifact-card-description">
-                        {a.description || a.kind.toUpperCase()}
-                      </span>
-                    </button>
-                    <div className="artifact-card-footer">
-                      <span>v{a.head}</span>
-                      <div>
-                        <button
-                          aria-label={`Rename ${a.title}`}
-                          title="Rename"
-                          onClick={() => manage("rename", a)}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          aria-label={`Delete ${a.title}`}
-                          title="Delete artifact"
-                          className="danger-action"
-                          onClick={() => manage("delete", a)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-                {hasMoreArtifacts && (
-                  <button
-                    onClick={() =>
-                      run(async () => {
-                        const last = artifacts.at(-1)!;
-                        const rows = await api<Artifact[]>(
-                          `/artifacts?cursor=${encodeURIComponent(last.updatedAt + "|" + last.id)}&search=${encodeURIComponent(search)}`,
-                        );
-                        setArtifacts((old) => [
-                          ...old,
-                          ...rows.filter(
-                            (row) => !old.some((item) => item.id === row.id),
-                          ),
-                        ]);
-                        setHasMoreArtifacts(rows.length === 200);
-                      })
-                    }
-                  >
-                    Load more artifacts
-                  </button>
-                )}
-                {!filtered.length && (
-                  <p className="no-results">No artifacts match your search.</p>
-                )}
-              </div>
-            </>
-          ) : (
-            <section className="empty-library">
-              <h2>No artifacts yet</h2>
-              <p>Ask your connected agent to create an artifact in atelier.</p>
-            </section>
-          )}
-        </main>
+        <Library
+          artifacts={artifacts}
+          search={search}
+          hasMoreArtifacts={hasMoreArtifacts}
+          onSearch={setSearch}
+          onOpen={navigate}
+          onManage={manage}
+          onLoadMore={() =>
+            run(async () => {
+              const last = artifacts.at(-1)!;
+              const rows = await api<Artifact[]>(
+                `/artifacts?cursor=${encodeURIComponent(last.updatedAt + "|" + last.id)}&search=${encodeURIComponent(search)}`,
+              );
+              setArtifacts((old) => [
+                ...old,
+                ...rows.filter(
+                  (row) => !old.some((item) => item.id === row.id),
+                ),
+              ]);
+              setHasMoreArtifacts(rows.length === 200);
+            })
+          }
+        />
       )}
       {management && (
         <dialog

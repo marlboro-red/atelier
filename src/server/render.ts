@@ -431,7 +431,29 @@ export async function compile(content: Content) {
           head: "",
           body,
         };
-  return { document, script, styles };
+  // Keep parsing untrusted markup in the isolated compiler, including export titles.
+  const nodes: DefaultTreeAdapterMap["node"][] = [
+    parse(document.head + document.body),
+  ];
+  let title = "atelier artifact";
+  while (nodes.length) {
+    const node = nodes.pop()!;
+    if ("tagName" in node && node.tagName === "title") {
+      const textNodes: DefaultTreeAdapterMap["node"][] = [
+        ...node.childNodes,
+      ].reverse();
+      title = "";
+      while (textNodes.length) {
+        const text = textNodes.pop()!;
+        if ("value" in text) title += text.value;
+        else if ("childNodes" in text)
+          textNodes.push(...[...text.childNodes].reverse());
+      }
+      break;
+    }
+    if ("childNodes" in node) nodes.push(...[...node.childNodes].reverse());
+  }
+  return { document, script, styles, title };
 }
 
 export async function render(

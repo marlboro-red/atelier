@@ -1,3 +1,4 @@
+import type { WorkspaceChange } from "../shared/bridge-messages.js";
 import Fastify from "fastify";
 import { AgentConnections, localAgents } from "./agent-connections.js";
 import { Feedback } from "./feedback.js";
@@ -32,7 +33,7 @@ export function createApp(
   const streams = new Set<ServerResponse>();
   const connections = new AgentConnections(
     feedback,
-    (id) => events.emit("change", { id }),
+    (id) => events.emit("change", { id, type: "feedback" }),
     agents,
   );
   app.addHook("preClose", async () => {
@@ -120,7 +121,7 @@ export function createApp(
       viewport.height === 900 &&
       store.saveThumbnail(id, revision, Buffer.from(thumbnail, "base64"))
     );
-    if (thumbnailAvailable) changed(id);
+    if (thumbnailAvailable) changed(id, "thumbnail");
     return { ...report, thumbnailAvailable };
   }
   const backgroundChecks = new Set<Promise<unknown>>();
@@ -134,7 +135,8 @@ export function createApp(
     void job.finally(() => backgroundChecks.delete(job)).catch(() => {});
     return { status: "pending", revision };
   }
-  const changed = (id: string) => events.emit("change", { id });
+  const changed = (id: string, type: WorkspaceChange["type"] = "artifact") =>
+    events.emit("change", { id, type });
   const params = (req: any) =>
     req.params as { id: string; n: string; cid: string };
   app.get("/api/health", async () => ({
@@ -317,7 +319,7 @@ export function createApp(
       }
       return comments;
     });
-    if (updated) changed(id);
+    if (updated) changed(id, "comments");
     return comments;
   });
   app.post("/api/artifacts/:id/comments", async (req, reply) => {
@@ -331,7 +333,7 @@ export function createApp(
       if (notifyAgent) feedback.enqueue(id, created.id, "comment");
       return created;
     });
-    changed(id);
+    changed(id, "comments");
     return reply.code(201).send(c);
   });
   app.patch("/api/artifacts/:id/comments/:cid", async (req) => {
@@ -362,7 +364,7 @@ export function createApp(
       if (input.notifyAgent && (input.reply || reopened))
         feedback.enqueue(id, c.id, input.reply ? "reply" : "reopened");
     });
-    changed(id);
+    changed(id, "comments");
     return c;
   });
   app.get("/api/artifacts/:id/data", async (req) =>
@@ -415,7 +417,7 @@ export function createApp(
       input.provider,
       input.session,
     );
-    changed(params(req).id);
+    changed(params(req).id, "feedback");
     return result;
   });
   app.post("/api/artifacts/:id/feedback/heartbeat", async (req) => {
@@ -450,7 +452,7 @@ export function createApp(
       input.ids,
       input.error,
     );
-    changed(params(req).id);
+    changed(params(req).id, "feedback");
     return result;
   });
   app.post("/api/artifacts/:id/feedback/disconnect", async (req) => {
@@ -459,12 +461,12 @@ export function createApp(
       .parse(req.body);
     const result = feedback.disconnect(params(req).id, input.token);
     await connections.stop(params(req).id);
-    changed(params(req).id);
+    changed(params(req).id, "feedback");
     return result;
   });
   app.post("/api/artifacts/:id/feedback/retry", async (req) => {
     const result = feedback.retry(params(req).id);
-    changed(params(req).id);
+    changed(params(req).id, "feedback");
     return result;
   });
   app.get("/api/events", async (req, reply) => {

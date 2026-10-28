@@ -91,3 +91,11 @@ export interface Comment {
 export type RevisionMetadata = Omit<Revision, "content"> & {
   kind: Content["kind"];
 };
+
+export interface FeedbackStatus {
+  provider: string | null;
+  connected: boolean;
+  state: string;
+  queued: number;
+  uncertain: number;
+}

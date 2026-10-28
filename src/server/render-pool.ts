@@ -82,6 +82,7 @@ export class RenderPool {
           if (compiled) {
             const value = JSON.parse(disk);
             if (
+              typeof value.title !== "string" ||
               typeof value.script !== "string" ||
               typeof value.styles !== "string" ||
               !["htmlOpen", "headOpen", "bodyOpen", "head", "body"].every(
