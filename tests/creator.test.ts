@@ -275,3 +275,53 @@ test("plain MCP creation reports a missing feedback target without launching an 
     await f.close();
   }
 });
+
+test("a failed creator watcher can reconnect without losing artifact ownership", async () => {
+  let connects = 0;
+  let stopped!: () => void;
+  const ended = new Promise<void>((resolve) => {
+    stopped = resolve;
+  });
+  const feedback = new CreatorFeedback({
+    provider: "claude",
+    adapter: { sessionId: "test", close() {}, async send() {} },
+    state: () => "connected",
+    log: () => stopped(),
+    request: async (path) => {
+      if (path.endsWith("/connect")) {
+        connects++;
+        return { token: "test" };
+      }
+      if (path.endsWith("/claim")) {
+        if (connects === 1) throw new Error("Transient outage");
+        return [];
+      }
+      return { ok: true };
+    },
+  });
+  try {
+    await feedback.add("test");
+    await ended;
+    await new Promise((resolve) => setImmediate(resolve));
+    await Promise.all([feedback.add("test"), feedback.add("test")]);
+    assert.equal(connects, 2);
+  } finally {
+    await feedback.close();
+  }
+  let attempts = 0;
+  const bridge = await creatorBridge(async () => {
+    if (++attempts === 1) throw new Error("Temporary failure");
+  });
+  const id = "00000000-0000-0000-0000-000000000001";
+  try {
+    await assert.rejects(
+      creatorRequest(bridge.config, id),
+      /Temporary failure/,
+    );
+    assert.deepEqual(await creatorRequest(bridge.config), [id]);
+    await creatorRequest(bridge.config, id);
+    assert.equal(attempts, 2);
+  } finally {
+    await bridge.close();
+  }
+});

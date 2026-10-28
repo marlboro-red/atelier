@@ -17,6 +17,7 @@ export async function creatorBridge(onCreate: (id: string) => Promise<void>) {
       : join(directory, "bridge.sock");
   const token = randomUUID();
   const ids = new Set<string>();
+  const registrations = new Map<string, Promise<void>>();
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
     sockets.add(socket);
@@ -38,9 +39,19 @@ export async function creatorBridge(onCreate: (id: string) => Promise<void>) {
         if (message.method === "created") {
           if (!/^[0-9a-f-]{36}$/.test(message.id))
             throw new Error("Invalid artifact ID");
-          if (!ids.has(message.id)) {
-            ids.add(message.id);
-            if (message.watch !== false) await onCreate(message.id);
+          ids.add(message.id);
+          if (message.watch !== false) {
+            let registration = registrations.get(message.id);
+            if (!registration) {
+              registration = Promise.resolve().then(() => onCreate(message.id));
+              registrations.set(message.id, registration);
+            }
+            try {
+              await registration;
+            } finally {
+              if (registrations.get(message.id) === registration)
+                registrations.delete(message.id);
+            }
           }
         } else if (message.method !== "list")
           throw new Error("Unknown creator request");
@@ -110,9 +121,10 @@ export async function creatorRequest(
 /** Serializes creation and feedback in one native session, across artifacts. */
 export class CreatorFeedback {
   private queue: Promise<void> = Promise.resolve();
+  private closed = false;
   private watchers = new Map<
     string,
-    { control: AbortController; done: Promise<void> }
+    { control: AbortController; done: Promise<void>; ready: Promise<void> }
   >();
   constructor(
     private options: {
@@ -134,7 +146,9 @@ export class CreatorFeedback {
     return run;
   }
   async add(id: string) {
-    if (this.watchers.has(id)) return;
+    if (this.closed) throw new Error("Creator feedback is closed");
+    const current = this.watchers.get(id);
+    if (current) return current.ready;
     const control = new AbortController();
     let connected!: () => void;
     let failed!: (error: unknown) => void;
@@ -156,14 +170,21 @@ export class CreatorFeedback {
         close: () => control.abort(),
         send: (prompt) => this.send(prompt, control.signal),
       },
-    }).catch((error) => {
-      failed(error);
-      this.options.log(`Feedback for ${id} stopped: ${String(error)}\n`);
-    });
-    this.watchers.set(id, { control, done });
+    })
+      .catch((error) => {
+        failed(error);
+        this.options.log(`Feedback for ${id} stopped: ${String(error)}\n`);
+      })
+      .finally(() => {
+        failed(new Error("Feedback disconnected before connecting"));
+        if (this.watchers.get(id)?.control === control)
+          this.watchers.delete(id);
+      });
+    this.watchers.set(id, { control, done, ready });
     await ready;
   }
   async close() {
+    this.closed = true;
     for (const { control } of this.watchers.values()) control.abort();
     this.options.adapter.close();
     await Promise.all([...this.watchers.values()].map(({ done }) => done));
