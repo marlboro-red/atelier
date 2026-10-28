@@ -34,6 +34,7 @@ import type {
   FeedbackStatus,
 } from "../shared/schema";
 import "./style.css";
+import "./workshop.css";
 const route = () => {
   const match = location.pathname.match(/^\/a\/([^/]+)(?:\/revisions\/(\d+))?/);
   return {
@@ -631,7 +632,10 @@ function App() {
                   aria-label="Back to artifacts"
                   onClick={() => navigate("")}
                 >
-                  <ArrowLeft size={15} />
+                  <span className="toolbar-wordmark" aria-hidden="true">
+                    a.
+                  </span>
+                  <ArrowLeft size={13} />
                 </button>
                 <span className="artifact-header-title" title={artifact.title}>
                   {artifact.title}

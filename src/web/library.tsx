@@ -1,5 +1,6 @@
+import { Ornament } from "./ornament";
 import React from "react";
-import { Search, Code2, Pencil, Trash2 } from "lucide-react";
+import { Search, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import type { Artifact } from "../shared/schema";
 type Props = {
   artifacts: Artifact[];
@@ -27,36 +28,52 @@ export const Library = React.memo(function Library({
   return (
     <main className="library">
       <header className="library-header">
-        <div className="brand">
-          <span className="brand-mark">a</span>atelier
-          <span className="brand-dot">.</span>
+        <span className="library-imprint">A personal workshop</span>
+        <div className="brand" aria-label="atelier">
+          atelier<span className="brand-period">.</span>
         </div>
         <span className="local-label">
-          <i /> Local to this computer
+          <span className="local-dot" />
+          Saved on this computer
         </span>
       </header>
       <div className="library-heading">
-        <h1>Artifacts</h1>
-        <p>View, comment on, and export artifacts created by your agent.</p>
+        <div>
+          <span className="collection-kicker">
+            Pages, studies & experiments
+          </span>
+          <h1>
+            Collected work<span>.</span>
+          </h1>
+          <p>
+            A place to return to your ideas, and give them a little more care.
+          </p>
+        </div>
+        <Ornament className="library-ornament" />
       </div>
       {artifacts.length > 0 || search ? (
         <>
           <div className="library-toolbar">
             <h2>
-              Your artifacts <span>{artifacts.length}</span>
+              The collection{" "}
+              <span>
+                {artifacts.length}
+                {hasMoreArtifacts ? "+" : ""}{" "}
+                {artifacts.length === 1 ? "piece" : "pieces"}
+              </span>
             </h2>
             <label className="search">
               <Search size={15} />
               <input
                 aria-label="Search artifacts"
-                placeholder="Find an artifact…"
+                placeholder="Find something…"
                 value={search}
                 onChange={(e) => onSearch(e.target.value)}
               />
             </label>
           </div>
           <div className="artifact-list">
-            {filtered.map((a) => (
+            {filtered.map((a, index) => (
               <article
                 className="artifact-card"
                 key={a.id}
@@ -67,7 +84,7 @@ export const Library = React.memo(function Library({
                   aria-label={`Open ${a.title}`}
                   onClick={() => onOpen(a.id)}
                 >
-                  <span className="artifact-thumbnail">
+                  <span className="artifact-thumbnail" data-kind={a.kind}>
                     {a.thumbnailVersion ? (
                       <img
                         src={`/api/artifacts/${a.id}/thumbnail?v=${encodeURIComponent(a.thumbnailVersion)}`}
@@ -76,18 +93,47 @@ export const Library = React.memo(function Library({
                       />
                     ) : (
                       <span className="thumbnail-placeholder">
-                        <Code2 size={28} />
-                        <span>Preview unavailable</span>
+                        <span className="folio-monogram">a</span>
+                        <span className="folio-format">
+                          {a.kind === "markdown"
+                            ? "A written piece"
+                            : a.kind === "svg"
+                              ? "A visual study"
+                              : "An interactive page"}
+                        </span>
+                        <span className="preview-unavailable">
+                          Preview unavailable
+                        </span>
                       </span>
                     )}
                   </span>
-                  <span className="artifact-card-title">{a.title}</span>
+                  <span className="artifact-card-caption">
+                    <span className="folio-number">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="artifact-card-title">{a.title}</span>
+                    <ArrowUpRight className="artifact-open-arrow" size={17} />
+                  </span>
                   <span className="artifact-card-description">
-                    {a.description || a.kind.toUpperCase()}
+                    {a.description ||
+                      (a.kind === "markdown"
+                        ? "Notes & writing"
+                        : a.kind === "svg"
+                          ? "A visual study"
+                          : "An interactive page")}
                   </span>
                 </button>
                 <div className="artifact-card-footer">
-                  <span>v{a.head}</span>
+                  <span>
+                    <time dateTime={a.updatedAt}>
+                      {new Intl.DateTimeFormat("en", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }).format(new Date(a.updatedAt))}
+                    </time>
+                    <span className="card-version">Revision {a.head}</span>
+                  </span>
                   <div>
                     <button
                       aria-label={`Rename ${a.title}`}
@@ -109,7 +155,9 @@ export const Library = React.memo(function Library({
               </article>
             ))}
             {hasMoreArtifacts && (
-              <button onClick={onLoadMore}>Load more artifacts</button>
+              <button className="load-more" onClick={onLoadMore}>
+                More from the collection <span aria-hidden="true">↓</span>
+              </button>
             )}
             {!filtered.length && (
               <p className="no-results">No artifacts match your search.</p>
@@ -118,10 +166,26 @@ export const Library = React.memo(function Library({
         </>
       ) : (
         <section className="empty-library">
-          <h2>No artifacts yet</h2>
-          <p>Ask your connected agent to create an artifact in atelier.</p>
+          <span className="empty-folio" aria-hidden="true">
+            <span>a</span>
+          </span>
+          <div className="empty-library-copy">
+            <span className="collection-kicker">An open beginning</span>
+            <h2>Your first piece belongs here.</h2>
+            <p>
+              Ask your connected agent to make a page in atelier.
+              <br />
+              It will find a home in this collection.
+            </p>
+          </div>
         </section>
       )}
+      <footer className="library-footer">
+        <span>
+          atelier <i>— a space for making</i>
+        </span>
+        <span>Made with attention. Kept close.</span>
+      </footer>
     </main>
   );
 });
