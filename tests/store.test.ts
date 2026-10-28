@@ -201,3 +201,46 @@ test("legacy histories migrate once and metadata reads do not touch source blobs
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("single comment reads are scoped and do not parse unrelated comments", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atelier-comments-"));
+  const store = new Store(dir);
+  try {
+    const make = () =>
+      store.create({
+        title: "Comments",
+        description: "",
+        author: "Test",
+        summary: "Initial",
+        content,
+      });
+    const a = make(),
+      b = make();
+    const c = store.addComment(a.id, {
+      revision: 1,
+      body: "Target",
+      author: "You",
+      anchor: null,
+    });
+    const other = store.addComment(a.id, {
+      revision: 1,
+      body: "Other",
+      author: "You",
+      anchor: null,
+    });
+    store.db
+      .prepare("UPDATE comments SET data='invalid' WHERE id=?")
+      .run(other.id);
+    assert.equal(store.comment(a.id, c.id).body, "Target");
+    assert.throws(() => store.comment(b.id, c.id), /not found/);
+    const plan = store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT data FROM comments WHERE artifact_id=?",
+      )
+      .all(a.id);
+    assert.match(JSON.stringify(plan), /comments_artifact/);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

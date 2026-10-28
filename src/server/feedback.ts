@@ -26,7 +26,7 @@ export class Feedback {
     `);
   }
   enqueue(id: string, commentId: string, kind: string) {
-    this.store.db
+    this.store
       .prepare(
         "INSERT INTO feedback_events(artifact_id,comment_id,kind,created_at) VALUES (?,?,?,?)",
       )
@@ -34,7 +34,7 @@ export class Feedback {
   }
   private connection(id: string) {
     this.store.get(id);
-    return this.store.db
+    return this.store
       .prepare("SELECT * FROM feedback_connections WHERE artifact_id=?")
       .get(id);
   }
@@ -42,7 +42,7 @@ export class Feedback {
     const c = this.connection(id);
     const connected =
       !!c && !!c.enabled && Number(c.heartbeat) > this.now() - leaseMs;
-    const counts = this.store.db
+    const counts = this.store
       .prepare(
         "SELECT status,COUNT(*) AS n FROM feedback_events WHERE artifact_id=? GROUP BY status",
       )
@@ -68,13 +68,13 @@ export class Feedback {
           409,
           "An agent is already connected to this artifact. Disconnect it first.",
         );
-      this.store.db
+      this.store
         .prepare(
           "UPDATE feedback_events SET status='uncertain',error='Connection ended before delivery was confirmed' WHERE artifact_id=? AND status='dispatching'",
         )
         .run(id);
       const token = randomUUID();
-      this.store.db
+      this.store
         .prepare(
           "INSERT INTO feedback_connections VALUES (?,?,?,?,1,?,'connected') ON CONFLICT(artifact_id) DO UPDATE SET token=excluded.token,provider=excluded.provider,session=excluded.session,enabled=1,heartbeat=excluded.heartbeat,state='connected'",
         )
@@ -96,7 +96,7 @@ export class Feedback {
   }
   heartbeat(id: string, token: string, state: string) {
     this.authorize(id, token);
-    this.store.db
+    this.store
       .prepare(
         "UPDATE feedback_connections SET heartbeat=?,state=? WHERE artifact_id=? AND token=?",
       )
@@ -106,12 +106,12 @@ export class Feedback {
   disconnect(id: string, token?: string) {
     if (token) this.authorize(id, token);
     else this.store.get(id);
-    this.store.db
+    this.store
       .prepare(
         "UPDATE feedback_connections SET enabled=0,state='disconnected' WHERE artifact_id=?",
       )
       .run(id);
-    this.store.db
+    this.store
       .prepare(
         "UPDATE feedback_events SET status='uncertain',error='Disconnected during delivery' WHERE artifact_id=? AND status='dispatching'",
       )
@@ -122,14 +122,14 @@ export class Feedback {
     return this.store.transaction(() => {
       this.authorize(id, token);
       if (
-        this.store.db
+        this.store
           .prepare(
             "SELECT id FROM feedback_events WHERE artifact_id=? AND status='dispatching'",
           )
           .get(id)
       )
         return [];
-      const rows = this.store.db
+      const rows = this.store
         .prepare(
           "SELECT id,comment_id,kind FROM feedback_events WHERE artifact_id=? AND status='queued' ORDER BY id LIMIT 50",
         )
@@ -141,7 +141,7 @@ export class Feedback {
         const status = ["resolved", "addressed"].includes(c.status)
           ? "cancelled"
           : "dispatching";
-        this.store.db
+        this.store
           .prepare("UPDATE feedback_events SET status=?,token=? WHERE id=?")
           .run(status, token, row.id);
         if (status === "dispatching")
@@ -158,7 +158,7 @@ export class Feedback {
     return this.store.transaction(() => {
       this.authorize(id, token);
       for (const eventId of ids)
-        this.store.db
+        this.store
           .prepare(
             "UPDATE feedback_events SET status=?,error=? WHERE id=? AND artifact_id=? AND token=? AND status='dispatching'",
           )
@@ -184,12 +184,12 @@ export class Feedback {
         "Wait for the current agent turn or disconnect before retrying.",
       );
     if (!c?.enabled || Number(c.heartbeat) <= this.now() - leaseMs)
-      this.store.db
+      this.store
         .prepare(
           "UPDATE feedback_events SET status='uncertain' WHERE artifact_id=? AND status='dispatching'",
         )
         .run(id);
-    this.store.db
+    this.store
       .prepare(
         "UPDATE feedback_events SET status='queued',token=NULL,error=NULL WHERE artifact_id=? AND status='uncertain'",
       )

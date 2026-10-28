@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -20,6 +20,15 @@ export class HttpError extends Error {
 }
 export class Store {
   db: DatabaseSync;
+  private statements = new Map<string, StatementSync>();
+  prepare(sql: string): StatementSync {
+    let statement = this.statements.get(sql);
+    if (!statement) {
+      statement = this.db.prepare(sql);
+      this.statements.set(sql, statement);
+    }
+    return statement;
+  }
   constructor(readonly directory: string) {
     mkdirSync(directory, { recursive: true });
     this.db = new DatabaseSync(join(directory, "atelier.sqlite"));
@@ -27,15 +36,14 @@ export class Store {
  CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS revisions (artifact_id TEXT NOT NULL REFERENCES artifacts(id), number INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(artifact_id,number));
  CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id), data TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS comments_artifact ON comments(artifact_id);
  CREATE TABLE IF NOT EXISTS thumbnails (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), revision INTEGER NOT NULL, version TEXT NOT NULL, image BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS app_data (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), data TEXT NOT NULL);`);
     // Migrate once, rather than parsing source blobs during every history read.
     if (
-      !this.db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE name='revision_metadata'",
-        )
-        .get()
+      !this.prepare(
+        "SELECT name FROM sqlite_master WHERE name='revision_metadata'",
+      ).get()
     ) {
       this.transaction(() => {
         this.db.exec(`CREATE TABLE revision_metadata (
@@ -47,10 +55,9 @@ export class Store {
     }
   }
   list(): Artifact[] {
-    return this.db
-      .prepare(
-        "SELECT artifacts.data, thumbnails.revision AS thumbnail_revision, thumbnails.version AS thumbnail_version FROM artifacts LEFT JOIN thumbnails ON thumbnails.artifact_id=artifacts.id",
-      )
+    return this.prepare(
+      "SELECT artifacts.data, thumbnails.revision AS thumbnail_revision, thumbnails.version AS thumbnail_version FROM artifacts LEFT JOIN thumbnails ON thumbnails.artifact_id=artifacts.id",
+    )
       .all()
       .map((r) => {
         const artifact = JSON.parse(r.data as string);
@@ -61,7 +68,7 @@ export class Store {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
   get(id: string): Artifact {
-    const r = this.db.prepare("SELECT data FROM artifacts WHERE id=?").get(id);
+    const r = this.prepare("SELECT data FROM artifacts WHERE id=?").get(id);
     if (!r) throw new HttpError(404, "Artifact not found");
     return JSON.parse(r.data as string);
   }
@@ -71,18 +78,17 @@ export class Store {
     limit = 200,
   ): RevisionMetadata[] {
     this.get(id);
-    return this.db
-      .prepare(
-        "SELECT data FROM revision_metadata WHERE artifact_id=? AND number<? ORDER BY number DESC LIMIT ?",
-      )
+    return this.prepare(
+      "SELECT data FROM revision_metadata WHERE artifact_id=? AND number<? ORDER BY number DESC LIMIT ?",
+    )
       .all(id, before, limit)
       .map((r) => JSON.parse(r.data as string));
   }
   revision(id: string, n?: number): Revision {
     const a = this.get(id);
-    const r = this.db
-      .prepare("SELECT data FROM revisions WHERE artifact_id=? AND number=?")
-      .get(id, n ?? a.head);
+    const r = this.prepare(
+      "SELECT data FROM revisions WHERE artifact_id=? AND number=?",
+    ).get(id, n ?? a.head);
     if (!r) throw new HttpError(404, "Revision not found");
     return JSON.parse(r.data as string);
   }
@@ -115,9 +121,10 @@ export class Store {
         createdAt: now,
         updatedAt: now,
       };
-      this.db
-        .prepare("INSERT INTO artifacts VALUES (?,?)")
-        .run(a.id, JSON.stringify(a));
+      this.prepare("INSERT INTO artifacts VALUES (?,?)").run(
+        a.id,
+        JSON.stringify(a),
+      );
       this.insertRevision({
         artifactId: a.id,
         number: 1,
@@ -137,9 +144,10 @@ export class Store {
     const artifact = this.get(id);
     artifact.title = name;
     artifact.updatedAt = new Date().toISOString();
-    this.db
-      .prepare("UPDATE artifacts SET data=? WHERE id=?")
-      .run(JSON.stringify(artifact), id);
+    this.prepare("UPDATE artifacts SET data=? WHERE id=?").run(
+      JSON.stringify(artifact),
+      id,
+    );
     return artifact;
   }
   remove(id: string, baseRevision: number) {
@@ -150,25 +158,25 @@ export class Store {
           409,
           "The artifact has a newer revision. Reopen Delete to review the current artifact.",
         );
-      this.db.prepare("DELETE FROM comments WHERE artifact_id=?").run(id);
-      this.db.prepare("DELETE FROM app_data WHERE artifact_id=?").run(id);
-      this.db.prepare("DELETE FROM thumbnails WHERE artifact_id=?").run(id);
-      this.db.prepare("DELETE FROM revisions WHERE artifact_id=?").run(id);
-      this.db.prepare("DELETE FROM artifacts WHERE id=?").run(id);
+      this.prepare("DELETE FROM comments WHERE artifact_id=?").run(id);
+      this.prepare("DELETE FROM app_data WHERE artifact_id=?").run(id);
+      this.prepare("DELETE FROM thumbnails WHERE artifact_id=?").run(id);
+      this.prepare("DELETE FROM revisions WHERE artifact_id=?").run(id);
+      this.prepare("DELETE FROM artifacts WHERE id=?").run(id);
     });
   }
   private insertRevision(r: Revision) {
     const { content, ...metadata } = r;
-    this.db
-      .prepare("INSERT INTO revision_metadata VALUES (?,?,?)")
-      .run(
-        r.artifactId,
-        r.number,
-        JSON.stringify({ ...metadata, kind: content.kind }),
-      );
-    this.db
-      .prepare("INSERT INTO revisions VALUES (?,?,?)")
-      .run(r.artifactId, r.number, JSON.stringify(r));
+    this.prepare("INSERT INTO revision_metadata VALUES (?,?,?)").run(
+      r.artifactId,
+      r.number,
+      JSON.stringify({ ...metadata, kind: content.kind }),
+    );
+    this.prepare("INSERT INTO revisions VALUES (?,?,?)").run(
+      r.artifactId,
+      r.number,
+      JSON.stringify(r),
+    );
   }
   update(
     id: string,
@@ -187,7 +195,7 @@ export class Store {
           409,
           `Revision conflict: latest is ${a.head}; you started from ${input.baseRevision}`,
         );
-      for (const cid of input.commentIds) {
+      for (const cid of new Set(input.commentIds)) {
         const c = this.comment(id, cid);
         if (c.status !== "resolved") {
           c.status = "addressed";
@@ -208,23 +216,25 @@ export class Store {
       a.head = r.number;
       a.kind = r.content.kind;
       a.updatedAt = now;
-      this.db
-        .prepare("UPDATE artifacts SET data=? WHERE id=?")
-        .run(JSON.stringify(a), id);
+      this.prepare("UPDATE artifacts SET data=? WHERE id=?").run(
+        JSON.stringify(a),
+        id,
+      );
       return r;
     });
   }
   comments(id: string): Comment[] {
     this.get(id);
-    return this.db
-      .prepare("SELECT data FROM comments WHERE artifact_id=?")
+    return this.prepare("SELECT data FROM comments WHERE artifact_id=?")
       .all(id)
       .map((r) => JSON.parse(r.data as string));
   }
   comment(id: string, cid: string): Comment {
-    const c = this.comments(id).find((c) => c.id === cid);
-    if (!c) throw new HttpError(404, "Comment not found");
-    return c;
+    const row = this.prepare(
+      "SELECT data FROM comments WHERE id=? AND artifact_id=?",
+    ).get(cid, id);
+    if (!row) throw new HttpError(404, "Comment not found");
+    return JSON.parse(row.data as string);
   }
   addComment(
     id: string,
@@ -248,51 +258,44 @@ export class Store {
     return c;
   }
   saveComment(c: Comment) {
-    this.db
-      .prepare(
-        "INSERT INTO comments VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
-      )
-      .run(c.id, c.artifactId, JSON.stringify(c));
+    this.prepare(
+      "INSERT INTO comments VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+    ).run(c.id, c.artifactId, JSON.stringify(c));
   }
   data(id: string): unknown {
     this.get(id);
-    const row = this.db
-      .prepare("SELECT data FROM app_data WHERE artifact_id=?")
-      .get(id);
+    const row = this.prepare(
+      "SELECT data FROM app_data WHERE artifact_id=?",
+    ).get(id);
     return row ? JSON.parse(row.data as string) : null;
   }
   setData(id: string, data: unknown) {
     this.get(id);
-    this.db
-      .prepare(
-        "INSERT INTO app_data VALUES (?,?) ON CONFLICT(artifact_id) DO UPDATE SET data=excluded.data",
-      )
-      .run(id, JSON.stringify(data));
+    this.prepare(
+      "INSERT INTO app_data VALUES (?,?) ON CONFLICT(artifact_id) DO UPDATE SET data=excluded.data",
+    ).run(id, JSON.stringify(data));
   }
   saveThumbnail(id: string, revision: number, image: Uint8Array): boolean {
-    const row = this.db
-      .prepare("SELECT data FROM artifacts WHERE id=?")
-      .get(id);
+    const row = this.prepare("SELECT data FROM artifacts WHERE id=?").get(id);
     // A slower check must not replace a newer revision's preview, or recreate
     // a preview for an artifact deleted while the browser was running.
     if (!row || JSON.parse(row.data as string).head !== revision) return false;
-    this.db
-      .prepare(
-        "INSERT INTO thumbnails VALUES (?,?,?,?) ON CONFLICT(artifact_id) DO UPDATE SET revision=excluded.revision, version=excluded.version, image=excluded.image",
-      )
-      .run(id, revision, `${revision}-${randomUUID()}`, image);
+    this.prepare(
+      "INSERT INTO thumbnails VALUES (?,?,?,?) ON CONFLICT(artifact_id) DO UPDATE SET revision=excluded.revision, version=excluded.version, image=excluded.image",
+    ).run(id, revision, `${revision}-${randomUUID()}`, image);
     return true;
   }
   thumbnail(id: string): Uint8Array {
     const artifact = this.get(id);
-    const row = this.db
-      .prepare("SELECT revision,image FROM thumbnails WHERE artifact_id=?")
-      .get(id);
+    const row = this.prepare(
+      "SELECT revision,image FROM thumbnails WHERE artifact_id=?",
+    ).get(id);
     if (!row || row.revision !== artifact.head)
       throw new HttpError(404, "No preview for the current revision");
     return row.image as Uint8Array;
   }
   close() {
+    this.statements.clear();
     this.db.close();
   }
 }
