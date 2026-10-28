@@ -39,6 +39,15 @@ export class Store {
  CREATE INDEX IF NOT EXISTS comments_artifact ON comments(artifact_id);
  CREATE TABLE IF NOT EXISTS thumbnails (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), revision INTEGER NOT NULL, version TEXT NOT NULL, image BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS app_data (artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id), data TEXT NOT NULL);`);
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(app_data)")
+        .all()
+        .some((column) => column.name === "version")
+    )
+      this.db.exec(
+        "ALTER TABLE app_data ADD COLUMN version INTEGER NOT NULL DEFAULT 0",
+      );
     // Migrate once, rather than parsing source blobs during every history read.
     if (
       !this.prepare(
@@ -262,18 +271,37 @@ export class Store {
       "INSERT INTO comments VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
     ).run(c.id, c.artifactId, JSON.stringify(c));
   }
-  data(id: string): unknown {
+  dataRecord(id: string): { data: unknown; dataVersion: number } {
     this.get(id);
     const row = this.prepare(
-      "SELECT data FROM app_data WHERE artifact_id=?",
+      "SELECT data,version FROM app_data WHERE artifact_id=?",
     ).get(id);
-    return row ? JSON.parse(row.data as string) : null;
+    return {
+      data: row ? JSON.parse(row.data as string) : null,
+      dataVersion: Number(row?.version ?? 0),
+    };
   }
-  setData(id: string, data: unknown) {
-    this.get(id);
-    this.prepare(
-      "INSERT INTO app_data VALUES (?,?) ON CONFLICT(artifact_id) DO UPDATE SET data=excluded.data",
-    ).run(id, JSON.stringify(data));
+  data(id: string): unknown {
+    return this.dataRecord(id).data;
+  }
+  setData(id: string, data: unknown, baseVersion?: number) {
+    return this.transaction(() => {
+      this.get(id);
+      const row = this.prepare(
+        "SELECT version FROM app_data WHERE artifact_id=?",
+      ).get(id);
+      const current = Number(row?.version ?? 0);
+      if (baseVersion !== undefined && baseVersion !== current)
+        throw new HttpError(
+          409,
+          "Saved data changed in another viewer. Reload before saving again.",
+        );
+      const version = current + 1;
+      this.prepare(
+        "INSERT INTO app_data(artifact_id,data,version) VALUES (?,?,?) ON CONFLICT(artifact_id) DO UPDATE SET data=excluded.data,version=excluded.version",
+      ).run(id, JSON.stringify(data), version);
+      return { dataVersion: version };
+    });
   }
   saveThumbnail(id: string, revision: number, image: Uint8Array): boolean {
     const row = this.prepare("SELECT data FROM artifacts WHERE id=?").get(id);

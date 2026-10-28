@@ -244,3 +244,28 @@ test("single comment reads are scoped and do not parse unrelated comments", () =
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("versioned data saves reject stale writers and survive reopening", () => {
+  const dir = mkdtempSync(join(tmpdir(), "atelier-data-"));
+  let store = new Store(dir);
+  try {
+    const a = store.create({
+      title: "Data",
+      description: "",
+      author: "Test",
+      summary: "Initial",
+      content,
+    });
+    assert.equal(store.dataRecord(a.id).dataVersion, 0);
+    assert.equal(store.setData(a.id, { value: 1 }, 0).dataVersion, 1);
+    assert.throws(() => store.setData(a.id, { value: 0 }, 0), /another viewer/);
+    assert.deepEqual(store.data(a.id), { value: 1 });
+    store.close();
+    store = new Store(dir);
+    assert.equal(store.dataRecord(a.id).dataVersion, 1);
+    assert.equal(store.setData(a.id, { value: 2 }, 1).dataVersion, 2);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

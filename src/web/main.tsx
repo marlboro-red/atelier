@@ -601,12 +601,23 @@ function App() {
       }
       if (msg.type === "save-data" && artifact) {
         try {
-          await api(`/artifacts/${artifact.id}/data`, {
-            method: "PUT",
-            body: JSON.stringify({ data: msg.data }),
-          });
+          const saved = await api<{ dataVersion: number }>(
+            `/artifacts/${artifact.id}/data`,
+            {
+              method: "PUT",
+              body: JSON.stringify({
+                data: msg.data,
+                baseVersion: msg.baseVersion,
+              }),
+            },
+          );
           event.source?.postMessage(
-            { atelier: true, type: "data-result", requestId: msg.requestId },
+            {
+              atelier: true,
+              type: "data-result",
+              requestId: msg.requestId,
+              dataVersion: saved.dataVersion,
+            },
             { targetOrigin: "*" },
           );
         } catch (e: any) {

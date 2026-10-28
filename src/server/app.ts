@@ -94,7 +94,7 @@ export function createApp(
       html = await renderer.run(store.revision(id, revision).content, {
         id,
         revision,
-        data: store.data(id),
+        ...store.dataRecord(id),
       });
     } catch (error) {
       return {
@@ -203,7 +203,7 @@ export function createApp(
         html: await renderer.run(r.content, {
           id,
           revision: r.number,
-          data: store.data(id),
+          ...store.dataRecord(id),
         }),
       };
     } catch (error) {
@@ -355,17 +355,22 @@ export function createApp(
     changed(id);
     return c;
   });
-  app.get("/api/artifacts/:id/data", async (req) => ({
-    data: store.data(params(req).id),
-  }));
+  app.get("/api/artifacts/:id/data", async (req) =>
+    store.dataRecord(params(req).id),
+  );
   app.put("/api/artifacts/:id/data", async (req) => {
     const body = z
-      .object({ data: z.unknown().refine((v) => v !== undefined) })
+      .object({
+        data: z.unknown().refine((v) => v !== undefined),
+        baseVersion: z.number().int().nonnegative().optional(),
+      })
       .parse(req.body);
     if (JSON.stringify(body.data).length > 2 * 1024 * 1024)
       throw new HttpError(413, "App data limit is 2 MB");
-    store.setData(params(req).id, body.data);
-    return { ok: true };
+    return {
+      ok: true,
+      ...store.setData(params(req).id, body.data, body.baseVersion),
+    };
   });
   app.get("/api/agents/codex/sessions", async (_req, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -485,7 +490,7 @@ export function createApp(
     const html = await renderer.run(r.content, {
       id,
       revision: r.number,
-      data: store.data(id),
+      ...store.dataRecord(id),
       snapshot: input.snapshot,
       standalone: true,
       freeze: input.format === "pdf",

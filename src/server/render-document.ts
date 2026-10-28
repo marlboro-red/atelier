@@ -16,6 +16,7 @@ export type RenderOptions = {
   id: string;
   revision: number;
   data?: unknown;
+  dataVersion?: number;
   snapshot?: unknown;
   standalone?: boolean;
   freeze?: boolean;
@@ -25,6 +26,7 @@ function bridge(config: {
   id: string;
   revision: number;
   data: unknown;
+  dataVersion: number;
   snapshot: any;
   standalone: boolean;
   freeze: boolean;
@@ -36,6 +38,8 @@ function bridge(config: {
   let inspector: HTMLElement | null = null;
   let state = config.snapshot?.state ?? null;
   let data = config.data;
+  let dataVersion = config.dataVersion;
+  let saves: Promise<unknown> = Promise.resolve();
   const pending = new Map();
   const readiness: Promise<unknown>[] = [];
   let resolveReady!: () => void, rejectReady!: (error: unknown) => void;
@@ -63,22 +67,42 @@ function bridge(config: {
     },
     getData: async () =>
       config.standalone && parent !== window
-        ? exportRequest("export-get-data")
+        ? exportRequest("export-get-data").then((result: any) => result.data)
         : data,
-    setData: async (value: any) => {
-      data = value;
-      if (config.standalone) {
-        if (parent !== window) return exportRequest("export-set-data", value);
-        try {
-          localStorage.setItem("atelier:" + config.id, JSON.stringify(value));
-        } catch {}
-        return;
-      }
-      const requestId = ++seq;
-      return new Promise((resolve, reject) => {
-        pending.set(requestId, { resolve, reject });
-        emit("save-data", { requestId, data: value });
+    setData: (value: any) => {
+      // Capture each caller's value now, but send its version only after prior saves finish.
+      const copy = structuredClone(value);
+      const save = saves.then(async () => {
+        if (config.standalone) {
+          if (parent !== window) await exportRequest("export-set-data", copy);
+          else {
+            try {
+              localStorage.setItem(
+                "atelier:" + config.id,
+                JSON.stringify(copy),
+              );
+            } catch {}
+          }
+        } else {
+          const requestId = ++seq;
+          const result: any = await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pending.delete(requestId);
+              reject(new Error("Saving app data timed out"));
+            }, 15000);
+            pending.set(requestId, { resolve, reject, timer });
+            emit("save-data", {
+              requestId,
+              data: copy,
+              baseVersion: dataVersion,
+            });
+          });
+          dataVersion = result.dataVersion ?? dataVersion;
+        }
+        data = copy;
       });
+      saves = save.catch(() => {});
+      return save;
     },
     getState: () => state,
     setState: (value: any) => {
@@ -158,7 +182,8 @@ function bridge(config: {
     if (msg.type === "data-result") {
       const p = pending.get(msg.requestId);
       if (p) {
-        msg.error ? p.reject(new Error(msg.error)) : p.resolve(msg.data);
+        clearTimeout(p.timer);
+        msg.error ? p.reject(new Error(msg.error)) : p.resolve(msg);
         pending.delete(msg.requestId);
       }
     }
@@ -623,6 +648,7 @@ function bridge(config: {
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   async function settle() {
     const work = async () => {
+      await saves;
       await frame();
       await frame();
       while (readiness.length) await Promise.all(readiness.splice(0));
@@ -786,6 +812,7 @@ export function assemble(
     id: options.id,
     revision: options.revision,
     data: options.data ?? null,
+    dataVersion: options.dataVersion ?? 0,
     snapshot: options.snapshot ?? null,
     standalone: options.standalone ?? false,
     freeze: options.freeze ?? false,

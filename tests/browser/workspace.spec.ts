@@ -684,3 +684,33 @@ test("export readiness restores controls created asynchronously", async ({
   await page.evaluate(() => (window as any).__atelierReady);
   await expect(page.locator("#late")).toHaveValue("saved");
 });
+
+test("overlapping viewer saves are serialized and stale viewers receive conflicts", async ({
+  page,
+  request,
+}) => {
+  const a = await create(request, "Concurrent saves", {
+    kind: "html",
+    entry: "index.html",
+    files: { "index.html": "<h1>Data</h1>" },
+  });
+  await page.goto(`/a/${a.id}`);
+  await expect(page.frameLocator("iframe").getByRole("heading")).toHaveText(
+    "Data",
+  );
+  const frame = page.frames().find((frame) => frame.parentFrame())!;
+  await frame.evaluate(async () => {
+    await Promise.all([
+      (window as any).atelier.setData({ value: 1 }),
+      (window as any).atelier.setData({ value: 2 }),
+    ]);
+  });
+  const current = await (
+    await request.get(`/api/artifacts/${a.id}/data`)
+  ).json();
+  expect(current).toEqual({ data: { value: 2 }, dataVersion: 2 });
+  const stale = await request.put(`/api/artifacts/${a.id}/data`, {
+    data: { data: { value: 0 }, baseVersion: 0 },
+  });
+  expect(stale.status()).toBe(409);
+});
