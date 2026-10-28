@@ -1,3 +1,4 @@
+import { DiskCache } from "./disk-cache.js";
 import { createHash } from "node:crypto";
 
 const minimumAge = 14 * 24 * 60 * 60 * 1000;
@@ -80,8 +81,28 @@ export function scriptLocation(source: string): ScriptLocation {
 export function createScriptLoader(
   fetcher: typeof fetch = (input, init) => fetch(input, init),
   now = Date.now,
+  directory?: string,
 ) {
   const cache = new Map<string, Buffer>();
+  const pending = new Map<string, Promise<Buffer>>();
+  const metadata = new Map<string, Promise<any>>();
+  const disk = directory
+    ? new DiskCache(directory, 64 * 1024 * 1024)
+    : undefined;
+  const hash = (value: string | Buffer) =>
+    createHash("sha256").update(value).digest("hex");
+  function remember(url: string, bytes: Buffer) {
+    cache.set(url, bytes);
+    let total = [...cache.values()].reduce(
+      (sum, value) => sum + value.length,
+      0,
+    );
+    for (const [key, value] of cache) {
+      if (total <= 16 * 1024 * 1024) break;
+      cache.delete(key);
+      total -= value.length;
+    }
+  }
   async function download(url: string, limit: number) {
     const response = await fetcher(url, {
       redirect: "error",
@@ -112,47 +133,95 @@ export function createScriptLoader(
     };
   }
   async function json(url: string) {
-    return JSON.parse((await download(url, 32 * 1024 * 1024)).bytes.toString());
+    let request = metadata.get(url);
+    if (!request) {
+      request = download(url, 32 * 1024 * 1024).then(({ bytes }) =>
+        JSON.parse(bytes.toString()),
+      );
+      metadata.set(url, request);
+      void request.finally(() => metadata.delete(url)).catch(() => {});
+    }
+    return request;
+  }
+  async function verified(
+    location: ScriptLocation,
+    source: string,
+  ): Promise<Buffer> {
+    const key = hash("verified-script-v1:" + location.url);
+    const saved = await disk?.get(key);
+    if (saved) {
+      try {
+        const entry = JSON.parse(saved);
+        const bytes = Buffer.from(entry.bytes, "base64");
+        if (
+          entry.url === location.url &&
+          Number.isFinite(entry.published) &&
+          now() - entry.published >= minimumAge &&
+          bytes.length <= 5 * 1024 * 1024 &&
+          hash(bytes) === entry.hash
+        )
+          return bytes;
+      } catch {
+        /* Reverify damaged cache entries. */
+      }
+    }
+    let name = location.package;
+    if (location.library) {
+      const metadata = await json(
+        `https://api.cdnjs.com/libraries/${location.library}?fields=autoupdate`,
+      );
+      if (metadata.autoupdate?.source === "npm")
+        name = metadata.autoupdate.target;
+    }
+    if (!name || !packageName.test(name))
+      throw new Error(
+        `Cannot verify the publication date for ${source}; use a versioned npm CDN URL instead`,
+      );
+    const metadata = await json(
+      `https://registry.npmjs.org/${encodeURIComponent(name)}`,
+    );
+    const published = Date.parse(metadata.time?.[location.version]);
+    if (
+      !metadata.versions?.[location.version] ||
+      !Number.isFinite(published) ||
+      now() - published < minimumAge
+    ) {
+      throw new Error(
+        `CDN script ${name}@${location.version} must have a verified publication date at least 14 days ago`,
+      );
+    }
+    const downloaded = await download(location.url, 5 * 1024 * 1024);
+    if (
+      !/^(?:text|application)\/(?:javascript|ecmascript|x-javascript)(?:;|$)/i.test(
+        downloaded.type,
+      )
+    )
+      throw new Error(`CDN URL did not return JavaScript: ${source}`);
+    const bytes = downloaded.bytes;
+    await disk?.put(
+      key,
+      JSON.stringify({
+        url: location.url,
+        published,
+        hash: hash(bytes),
+        bytes: bytes.toString("base64"),
+      }),
+    );
+    return bytes;
   }
   return async (source: string, integrity?: string) => {
     const location = scriptLocation(source);
     let bytes = cache.get(location.url);
     if (!bytes) {
-      let name = location.package;
-      if (location.library) {
-        const metadata = await json(
-          `https://api.cdnjs.com/libraries/${location.library}?fields=autoupdate`,
+      let job = pending.get(location.url);
+      if (!job) {
+        job = verified(location, source).finally(() =>
+          pending.delete(location.url),
         );
-        if (metadata.autoupdate?.source === "npm")
-          name = metadata.autoupdate.target;
+        pending.set(location.url, job);
       }
-      if (!name || !packageName.test(name))
-        throw new Error(
-          `Cannot verify the publication date for ${source}; use a versioned npm CDN URL instead`,
-        );
-      const metadata = await json(
-        `https://registry.npmjs.org/${encodeURIComponent(name)}`,
-      );
-      const published = Date.parse(metadata.time?.[location.version]);
-      if (
-        !metadata.versions?.[location.version] ||
-        !Number.isFinite(published) ||
-        now() - published < minimumAge
-      ) {
-        throw new Error(
-          `CDN script ${name}@${location.version} must have a verified publication date at least 14 days ago`,
-        );
-      }
-      const downloaded = await download(location.url, 5 * 1024 * 1024);
-      if (
-        !/^(?:text|application)\/(?:javascript|ecmascript|x-javascript)(?:;|$)/i.test(
-          downloaded.type,
-        )
-      )
-        throw new Error(`CDN URL did not return JavaScript: ${source}`);
-      bytes = downloaded.bytes;
-      if (cache.size >= 32) cache.delete(cache.keys().next().value!);
-      cache.set(location.url, bytes);
+      bytes = await job;
+      remember(location.url, bytes);
     }
     if (integrity) {
       const tokens = integrity.trim().split(/\s+/);
@@ -170,4 +239,8 @@ export function createScriptLoader(
     return `data:text/javascript;base64,${bytes.toString("base64")}`;
   };
 }
-export const loadCdnScript = createScriptLoader();
+export const loadCdnScript = createScriptLoader(
+  undefined,
+  undefined,
+  process.env.ATELIER_SCRIPT_CACHE,
+);

@@ -26,7 +26,7 @@ export class RenderPool {
     private worker = new URL("./render-worker.mjs", import.meta.url),
     private deadlineMs = 30000,
     private cacheBytes = 128 * 1024 * 1024,
-    cacheDirectory?: string,
+    private cacheDirectory?: string,
   ) {
     if (cacheDirectory)
       this.disk = new DiskCache(
@@ -127,6 +127,15 @@ export class RenderPool {
       if (this.closed) throw new HttpError(503, "Renderer is stopping");
       const env: NodeJS.ProcessEnv = {
         HOME: dir,
+        ...(this.cacheDirectory
+          ? {
+              ATELIER_SCRIPT_CACHE: join(
+                this.cacheDirectory,
+                "cache",
+                "scripts",
+              ),
+            }
+          : {}),
         USERPROFILE: dir,
         TMPDIR: dir,
         TEMP: dir,

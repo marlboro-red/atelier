@@ -119,3 +119,37 @@ test("unknown cdnjs publication sources, redirects, and non-JavaScript responses
     await assert.rejects(loader(url));
   }
 });
+
+test("verified scripts persist across loaders and concurrent downloads are shared", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "atelier-cdn-"));
+  let requests = 0;
+  const fetcher: typeof fetch = async (input) => {
+    requests++;
+    return String(input).includes("registry.npmjs.org")
+      ? Response.json({
+          versions: { "1.2.3": {} },
+          time: { "1.2.3": "2020-01-01" },
+        })
+      : new Response(code, { headers: { "content-type": "text/javascript" } });
+  };
+  try {
+    const loader = createScriptLoader(fetcher, () => now, directory);
+    const [a, b] = await Promise.all([loader(url), loader(url)]);
+    assert.equal(a, b);
+    assert.equal(requests, 2);
+    const offline = createScriptLoader(
+      async () => {
+        throw new Error("offline");
+      },
+      () => now,
+      directory,
+    );
+    assert.equal(await offline(url), a);
+    await assert.rejects(offline(url, "sha384-invalid"), /integrity mismatch/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

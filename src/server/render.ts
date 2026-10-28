@@ -110,6 +110,7 @@ async function htmlDocument(source: string, content: Content) {
         (_, prefix, _quote, url) => `${prefix}"${asset(url, base, seen)}"`,
       );
   let scriptCount = 0;
+  const downloads: (() => Promise<void>)[] = [];
   async function embedAssets(
     node: DefaultTreeAdapterMap["node"],
   ): Promise<void> {
@@ -131,10 +132,13 @@ async function htmlDocument(source: string, content: Content) {
           } else {
             if (++scriptCount > 16)
               throw new Error("An artifact may declare at most 16 CDN scripts");
-            src.value = await loadCdnScript(
-              src.value,
-              node.attrs.find((attr) => attr.name === "integrity")?.value,
-            );
+            const source = src.value;
+            const integrity = node.attrs.find(
+              (attr) => attr.name === "integrity",
+            )?.value;
+            downloads.push(async () => {
+              src.value = await loadCdnScript(source, integrity);
+            });
           }
           node.attrs = node.attrs.filter((attr) => attr.name !== "integrity");
         }
@@ -159,6 +163,12 @@ async function htmlDocument(source: string, content: Content) {
       for (const child of [...node.childNodes]) await embedAssets(child);
   }
   await embedAssets(html);
+  let nextDownload = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, downloads.length) }, async () => {
+      while (nextDownload < downloads.length) await downloads[nextDownload++]();
+    }),
+  );
   // atelier owns encoding, viewport, and security policy. Keep authored styles,
   // scripts, metadata, and attributes on the single document shell.
   head.childNodes = head.childNodes.filter((node) => {
